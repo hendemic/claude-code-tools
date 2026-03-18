@@ -40,10 +40,9 @@ When completing work on an issue, add a comment to the GitHub issue summarizing:
 # Completion
 When the work is done:
 1. Commit all remaining changes to the feature branch. DO NOT merge to `dev` or `main`.
-2. If working under an epic, merge the feature branch into the `epic/*` branch, delete the feature branch (local and remote), and push the epic branch to remote
-3. If standalone, push the feature branch to remote
-4. Update the issue status to `Staged` in the GitHub Project
-5. Signal to the user or orchestrating agent that the work is complete
+2. Update the issue status to `Staged` in the GitHub Project
+3. Signal to the user or orchestrating agent that the work is complete
+
 
 # Constraints
 - <important> Do not merge into `dev` or `main` </important>
