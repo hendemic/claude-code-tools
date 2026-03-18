@@ -1,0 +1,12 @@
+# Track only dev tooling
+*
+!.gitignore
+!skills/
+!skills/**
+!agents/
+!agents/**
+!rules/
+!rules/**
+!commands/
+!commands/**
+!setup-project.sh

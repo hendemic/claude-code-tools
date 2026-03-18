@@ -1,0 +1,3 @@
+- Do not use compound bash commands unless absolutely necessary. 
+  - It is difficult to control user permissions for these. 
+  - Send bash commands one at a time.
