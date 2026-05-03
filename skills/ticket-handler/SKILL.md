@@ -14,6 +14,7 @@ To pull issues or tickets to work on, you have a series of scripts available to 
 | `~/.claude/skills/ticket-handler/scripts/get-project-fields.sh` | Get Status and Size from GitHub Project | `<project-id> <numbers>` (e.g., `PVT_abc 1,2,5`) |
 | `~/.claude/skills/ticket-handler/scripts/set-status.sh` | Update issue Status in GitHub Project | `<project-id> <status-field-id> <numbers> <status>` (e.g., `PVT_abc PVTSSF_xyz 1,2,5 "In Progress"`) |
 | `~/.claude/skills/ticket-handler/scripts/set-size.sh` | Update issue Size in GitHub Project | `<project-id> <size-field-id> <numbers> <size>` (e.g., `PVT_abc PVTSSF_xyz 1,2,5 "Small"`) |
+| `~/.claude/skills/ticket-handler/scripts/list-sub-issues.sh` | List sub-issues of an epic | `<number> [number...]`, `58,59,60`, or `58-60` |
 | `~/.claude/skills/ticket-handler/scripts/create-issue.sh` | Create issue, add to project, set status and size | `<project-id> <status-field-id> <size-field-id> --title "..." [--body "..." --label feature --milestone "..." --status "Ready" --size "Small"]` |
 | `~/.claude/skills/ticket-handler/scripts/close-milestone.sh` | Close all open issues in a milestone | `"0.0.2"` or `--id 3`, supports `--dry-run` |
 

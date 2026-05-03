@@ -64,28 +64,53 @@ for arg in "$@"; do
     done
 done
 
-# Get all project item IDs in one query
-item_map=$(gh api graphql -f query='
-query($projectId: ID!) {
-  node(id: $projectId) {
-    ... on ProjectV2 {
-      items(first: 100) {
-        nodes {
-          id
-          content {
-            ... on Issue {
-              number
+# Paginate through every project item and build a num → itemId TSV map.
+item_map=""
+cursor=""
+while :; do
+    if [[ -z "$cursor" ]]; then
+        page=$(gh api graphql -f query='
+        query($projectId: ID!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              items(first: 100) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  content { ... on Issue { number } }
+                }
+              }
             }
           }
-        }
-      }
-    }
-  }
-}' -f projectId="$PROJECT_ID" --jq '
-    .data.node.items.nodes[] |
-    select(.content.number != null) |
-    "\(.content.number)\t\(.id)"
-')
+        }' -f projectId="$PROJECT_ID")
+    else
+        page=$(gh api graphql -f query='
+        query($projectId: ID!, $cursor: String!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              items(first: 100, after: $cursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  content { ... on Issue { number } }
+                }
+              }
+            }
+          }
+        }' -f projectId="$PROJECT_ID" -f cursor="$cursor")
+    fi
+
+    chunk=$(echo "$page" | jq -r '
+        .data.node.items.nodes[] |
+        select(.content.number != null) |
+        "\(.content.number)\t\(.id)"
+    ')
+    [[ -n "$chunk" ]] && item_map+="${chunk}"$'\n'
+
+    has_next=$(echo "$page" | jq -r '.data.node.items.pageInfo.hasNextPage')
+    cursor=$(echo "$page" | jq -r '.data.node.items.pageInfo.endCursor')
+    [[ "$has_next" == "true" ]] || break
+done
 
 for num in "${issues[@]}"; do
     item_id=$(echo "$item_map" | awk -F'\t' -v n="$num" '$1 == n { print $2 }')

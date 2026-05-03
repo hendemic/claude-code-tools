@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # Get GitHub Project fields (Status, Size) for one or more issues.
+# Paginates through every item in the project (100 per page) so issues at
+# any position are found.
+#
 # Usage:
 #   get-project-fields.sh <project-id> <issue-numbers>
 #   get-project-fields.sh PVT_abc123 1
@@ -33,29 +36,24 @@ for arg in "$@"; do
     done
 done
 
-echo -e "NUM\tSTATUS\tSIZE"
-
-for num in "${issues[@]}"; do
-    # Get the project item ID for this issue
-    result=$(gh api graphql -f query='
-    query($projectId: ID!) {
-      node(id: $projectId) {
-        ... on ProjectV2 {
-          items(first: 100) {
-            nodes {
-              id
-              content {
-                ... on Issue {
-                  number
-                }
-              }
-              fieldValues(first: 20) {
+# Paginate through all project items once and build a num → "status\tsize" map.
+declare -A item_map
+cursor=""
+while :; do
+    if [[ -z "$cursor" ]]; then
+        page=$(gh api graphql -f query='
+        query($projectId: ID!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              items(first: 100) {
+                pageInfo { hasNextPage endCursor }
                 nodes {
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    name
-                    field {
-                      ... on ProjectV2SingleSelectField {
+                  content { ... on Issue { number } }
+                  fieldValues(first: 20) {
+                    nodes {
+                      ... on ProjectV2ItemFieldSingleSelectValue {
                         name
+                        field { ... on ProjectV2SingleSelectField { name } }
                       }
                     }
                   }
@@ -63,21 +61,54 @@ for num in "${issues[@]}"; do
               }
             }
           }
-        }
-      }
-    }' -f projectId="$PROJECT_ID" --jq "
-        .data.node.items.nodes[] |
-        select(.content.number == $num) |
-        {
-            status: ([.fieldValues.nodes[] | select(.field.name == \"Status\") | .name] | first // \"none\"),
-            size: ([.fieldValues.nodes[] | select(.field.name == \"Size\") | .name] | first // \"none\")
-        } |
-        \"$num\t\(.status)\t\(.size)\"
-    " 2>/dev/null)
-
-    if [[ -n "$result" ]]; then
-        echo "$result"
+        }' -f projectId="$PROJECT_ID")
     else
-        echo -e "$num\t(not in project)\t-"
+        page=$(gh api graphql -f query='
+        query($projectId: ID!, $cursor: String!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              items(first: 100, after: $cursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  content { ... on Issue { number } }
+                  fieldValues(first: 20) {
+                    nodes {
+                      ... on ProjectV2ItemFieldSingleSelectValue {
+                        name
+                        field { ... on ProjectV2SingleSelectField { name } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }' -f projectId="$PROJECT_ID" -f cursor="$cursor")
+    fi
+
+    while IFS=$'\t' read -r num status size; do
+        [[ -z "$num" || "$num" == "null" ]] && continue
+        item_map[$num]=$'\t'"${status}"$'\t'"${size}"
+    done < <(echo "$page" | jq -r '
+        .data.node.items.nodes[] |
+        select(.content.number != null) |
+        [
+            .content.number,
+            ([.fieldValues.nodes[] | select(.field.name == "Status") | .name] | first // "none"),
+            ([.fieldValues.nodes[] | select(.field.name == "Size") | .name] | first // "none")
+        ] | @tsv
+    ')
+
+    has_next=$(echo "$page" | jq -r '.data.node.items.pageInfo.hasNextPage')
+    cursor=$(echo "$page" | jq -r '.data.node.items.pageInfo.endCursor')
+    [[ "$has_next" == "true" ]] || break
+done
+
+echo -e "NUM\tSTATUS\tSIZE"
+for num in "${issues[@]}"; do
+    if [[ -n "${item_map[$num]:-}" ]]; then
+        echo -e "${num}${item_map[$num]}"
+    else
+        echo -e "${num}\t(not in project)\t-"
     fi
 done

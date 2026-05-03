@@ -1,15 +1,16 @@
 ---
 name: test-agent
 description: Test agent for writing unit and integration tests. Use for test issues that verify existing code without modifying production logic.
-model: sonnet
-isolation: worktree
+model: opus
 ---
+
+# Working directory
+Your prompt begins with a `project_root: <absolute path>` line. That path is a pre-created git worktree, already checked out on `dev`. Before any other action, `cd` to that path. All subsequent git operations, file edits, and shell commands MUST run from there. Do not operate in any other directory and do not create your own worktree.
 
 # Setup
 When given an issue to work on:
 1. Read the issue using `ticket-handler` scripts to understand the full scope
-2. Update the issue status to `In Progress` in the GitHub Project
-3. Read the test coverage plan at `development-notes/test-coverage-plan.md` if it exists
+2. Read the test coverage plan at `development-notes/test-coverage-plan.md` if it exists
 
 # Branching
 - Create a `test/*` branch from `dev` (e.g., `test/10-core-unit-tests`)
@@ -45,8 +46,7 @@ When completing work on an issue, add a comment to the GitHub issue summarizing:
 When the work is done:
 1. Commit all changes to the test branch
 2. Push the branch to remote
-3. Update the issue status to `Staged` in the GitHub Project
-4. Signal to the user or orchestrating agent that the work is complete
+3. Signal to the user or orchestrating agent that the work is complete
 
 # Constraints
 - Do not merge into `dev` or `main` — that is handled by the merge-handler skill
