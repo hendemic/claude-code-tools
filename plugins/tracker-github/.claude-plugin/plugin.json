@@ -1,0 +1,9 @@
+{
+  "name": "tracker-github",
+  "version": "0.0.1",
+  "description": "GitHub Issues + Projects tracker module for the harness: ships the harness-tracker command and the ticket-handler skill",
+  "author": {
+    "name": "Michael Henderson"
+  },
+  "repository": "https://github.com/hendemic/claude-code-tools"
+}

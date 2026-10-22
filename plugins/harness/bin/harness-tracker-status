@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Report which tracker module (if any) provides the harness-tracker command.
+# Contract: <harness plugin>/contracts/tracker.md
+#
+# Run from the Bash tool: Claude Code puts every enabled plugin's bin/ on PATH
+# there. Hooks do not get those directories, so the SessionStart hook calls this
+# with --hook and, when it finds nothing, defers the check to the Bash tool.
+
+root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+contract="$root/contracts/tracker.md"
+
+# Unique resolved paths, in PATH order (PATH may list a directory twice).
+mapfile -t paths < <(which -a harness-tracker 2>/dev/null | while read -r p; do readlink -f "$p"; done | awk '!seen[$0]++')
+
+case "${#paths[@]}" in
+    0)
+        if [[ "${1:-}" == "--hook" ]]; then
+            echo "Harness tracker: not yet checked (plugin commands are not on PATH for hooks). Before any issue, status, comment, or milestone operation, run \`harness-tracker-status\` once with the Bash tool and follow what it prints."
+        else
+            echo "Harness tracker: none — skip all issue/status/milestone operations; work items come from the user's request."
+        fi
+        ;;
+    1)
+        echo "Harness tracker: active (${paths[0]}) — use \`harness-tracker\` per $contract."
+        ;;
+    *)
+        echo "WARNING — Harness tracker: CONFLICT. ${#paths[@]} enabled plugins ship a harness-tracker command:"
+        printf '  - %s\n' "${paths[@]}"
+        echo "Only the first one runs: ${paths[0]}. The others are silently ignored."
+        echo "Tell the user to enable only one tracker module for this project. Until then, use \`harness-tracker\` per $contract (it resolves to the first path above)."
+        ;;
+esac
+exit 0

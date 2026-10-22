@@ -1,12 +1,11 @@
 # Track only dev tooling
 *
 !.gitignore
-!skills/
-!skills/**
-!agents/
-!agents/**
-!rules/
-!rules/**
-!commands/
-!commands/**
-!setup-project.sh
+!.claude-plugin/
+!.claude-plugin/**
+!plugins/
+!plugins/**
+!user-rules/
+!user-rules/**
+!install-user-rules.sh
+!README.md
