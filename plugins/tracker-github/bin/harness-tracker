@@ -36,7 +36,7 @@ Contract subcommands (see the harness plugin's contracts/tracker.md):
   create --title T [--body-file F|-] [--label L] [--milestone M] [--status S] [--size Z]
                                          Create an issue; first stdout line is its number
   close-milestone <milestone> [--dry-run]
-                                         Close open issues, mark all complete, close milestone;
+                                         Close open issues, mark all complete (abandoned kept), close milestone;
                                          epics with unfinished sub-issues elsewhere are skipped
 
 tracker-github extras:
@@ -613,16 +613,45 @@ cmd_close_milestone() {
         done
     fi
 
+    # Items already abandoned keep that status; read them before closing anything
+    # (closing can trigger board automations).
+    local abandoned=""
+    if [[ "$have_project" == true ]]; then
+        local rows
+        rows=$(gh api graphql --paginate -f query="
+          query(\$owner: String!, \$name: String!, \$num: Int!, \$endCursor: String) {
+            repository(owner: \$owner, name: \$name) {
+              milestone(number: \$num) {
+                issues(first: 50, after: \$endCursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes { $ITEM_FIELDS }
+                }
+              }
+            }
+          }" -f owner="$REPO_OWNER" -f name="$REPO_NAME" -F num="$number" \
+            | jq -r --arg p "$PROJECT_ID" --arg f "$STATUS_FIELD_ID" "$JQ_STATUS"'
+                .data.repository.milestone.issues.nodes[] | row') \
+            || die "cannot read the issues of milestone '$title'"
+        local c raw state reason
+        while IFS=$'\t' read -r c raw state reason; do
+            [[ -z "$c" ]] && continue
+            [[ "$(item_neutral "$c" "$raw" "$state" "$reason")" == abandoned ]] || continue
+            abandoned+="${abandoned:+,}$c"
+        done <<< "$rows"
+        [[ -z "$abandoned" ]] || echo "Leaving abandoned items as they are: $abandoned"
+    fi
+
     # 1. Close open issues, except skipped epics.
     local args=("$title")
     [[ "$dry" == true ]] && args+=(--dry-run)
     [[ -n "$skip" ]] && args+=(--skip "$skip")
     "$SCRIPTS/close-milestone.sh" "${args[@]}"
 
-    # 2. Mark every issue in the milestone, except skipped epics, complete on the
-    # project board, then roll up parents outside the milestone.
+    # 2. Mark every issue in the milestone, except skipped epics and abandoned
+    # items, complete on the project board, then roll up parents outside the milestone.
+    local keep="${skip}${skip:+${abandoned:+,}}${abandoned}"
     all=$(gh issue list --milestone "$title" --state all --limit 1000 --json number --jq '.[].number' \
-        | { grep -vxF -f <(tr , '\n' <<< "${skip:-none}") || true; } | paste -sd,)
+        | { grep -vxF -f <(tr , '\n' <<< "${keep:-none}") || true; } | paste -sd,)
     if [[ -n "$all" && "$have_project" == true ]]; then
         if [[ "$dry" == true ]]; then
             echo "  [dry-run] Would set status $done_status on: $all"
