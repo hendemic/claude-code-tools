@@ -30,7 +30,7 @@ Before implementing:
 # Implementation
 - Work through each item's acceptance criteria
 - Make atomic commits as progress is made
-- Follow all project rules
+- Follow all project rules, including any language conventions in `.claude/rules/`
 - Validate that changes integrate cleanly with existing code
 
 # Logging

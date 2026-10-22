@@ -4,7 +4,8 @@ Plugin marketplace `hendemic-harness`:
 
 - `harness` (required): the dev process. `/harness:workstream`, `/harness:issue`, merge-handler, dev/test agents.
 - `tracker-github` (optional): issue tracking on GitHub Issues + a GitHub Project.
-- `harness-rust` (optional): Rust conventions.
+
+Language conventions are not plugins: see [Conventions](#conventions).
 
 ## Set up a project
 
@@ -27,16 +28,16 @@ Run from the project root.
      },
      "enabledPlugins": {
        "harness@hendemic-harness": true,
-       "tracker-github@hendemic-harness": true,
-       "harness-rust@hendemic-harness": true
+       "tracker-github@hendemic-harness": true
      }
    }
    ```
 
 3. Add any `## Harness: …` sections that apply to the project's `CLAUDE.md` (see [Project contract](#project-contract)).
 4. If using `tracker-github`, check the [tracker requirements](#tracker-github).
-5. Commit `.claude/settings.json` and `CLAUDE.md`.
-6. Start a new `claude` session and trust the folder. Check that:
+5. Install conventions for the project's languages: `<harness>/install-conventions.sh --project . add rust`, where `<harness>` is a local clone of this repo (`git clone git@github.com:hendemic/claude-code-tools.git`). `list` shows what's available; see [Conventions](#conventions).
+6. Commit `.claude/settings.json`, `CLAUDE.md`, and any `.claude/rules`, `.claude/skills` and `.claude/conventions.lock` from step 5.
+7. Start a new `claude` session and trust the folder. Check that:
    - `/plugin` lists the `@hendemic-harness` plugins;
    - `harness-tracker-status` prints `active` with a tracker, `none` without one. `CONFLICT` means more than one tracker is enabled.
 
@@ -52,6 +53,23 @@ Optional sections in the project's `CLAUDE.md`. Leave out any that don't apply.
 | `## Harness: user-only checks` | Checks agents must not run; you run them before a release |
 | `## Harness: lockfile` | Lockfile name and reinstall command |
 | `## Harness: conflict hotspots` | Files that often conflict when parallel work merges |
+
+## Conventions
+
+Coding conventions live in `conventions/<name>/`, each with a `convention.conf` (`description=…`, `kind=rule|skill`). `install-conventions.sh` copies them into a project: a `rule` becomes a path-scoped file in `.claude/rules/` (e.g. `rust.md` loads when Claude reads a `.rs` file), a `skill` becomes `.claude/skills/<name>/`. The copies are committed with the project; `.claude/conventions.lock` records what was installed so updates can tell harness changes from local edits.
+
+Run it from a local clone of this repo (agents need one too). `--project` defaults to the current directory, which should be the project's git root.
+
+```sh
+<harness>/install-conventions.sh                        # checklist (whiptail, dialog, or a plain prompt)
+<harness>/install-conventions.sh --project . list       # all conventions and their status
+<harness>/install-conventions.sh --project . add rust typescript
+<harness>/install-conventions.sh --project . remove typescript
+<harness>/install-conventions.sh --project . update     # all installed; or name some
+<harness>/install-conventions.sh --project . status     # installed only
+```
+
+To update, pull the harness clone and run `update`. A file you edited locally is skipped with a message (the checklist shows a diff and asks); `--force` overwrites it. Commit the result.
 
 ## tracker-github
 
@@ -73,7 +91,7 @@ Status names are matched to the board's options automatically, and epics follow 
 
 ## Update a project
 
-Change `ref` in `.claude/settings.json` to the new tag, run `claude plugin marketplace update hendemic-harness`, and start a new session.
+Change `ref` in `.claude/settings.json` to the new tag, run `claude plugin marketplace update hendemic-harness`, and start a new session. Update conventions separately with `install-conventions.sh update`.
 
 ## Machine setup (once)
 
