@@ -13,7 +13,10 @@ Branch types and naming are defined in the harness version-control rule (loaded 
 - Most work items are one branch each, named after the item and work scope (e.g. `feature/42-csv-export`, `bug/57-login-redirect`; without an issue tracker, drop the ref: `feature/csv-export`).
 - For epics: branch `epic/*` from the base, then branch `feature/*` off the epic. Feature branches merge back into the epic; the epic merges onward once its scope is done.
 - Atomic commits as work progresses. Commit messages describe intent, not just the diff.
-- Only the **harness:merge-handler** skill merges into `dev` or `integration/*`, opens release PRs to `main`, and tags releases. Don't merge into any of them directly outside that flow.
+- Merges into `dev` or `integration/*`, release PRs to `main`, and release tags all go through the **harness:merge-handler** skill. Who may run it:
+  - **Workstream orchestrator:** merges finished sub-agent branches into `integration/<milestone>`, without being asked.
+  - **User:** everything else, including every merge into `dev`, on request.
+  - **Sub-agents:** never. The only merge a sub-agent makes is a `feature/*` branch into its own `epic/*` branch.
 
 ## Sub-agent worktrees
 
@@ -26,7 +29,7 @@ Without an issue tracker there are no milestones: `/harness:workstream` agrees a
 
 The milestone prefix lets two parallel orchestrator sessions work on different milestones without colliding. Worktrees are created with `git worktree add --detach <path> <base>`, so the agent starts on a detached HEAD at the base and creates its own branch from there.
 
-Sub-agents commit on their branch but never merge — merges are a user-initiated step through harness:merge-handler.
+Sub-agents commit on their branch but never merge it into `integration/*` or `dev`. The orchestrator merges each finished sub-agent branch into `integration/<milestone>`; landing on `dev` is a user-initiated step.
 
 ## Never check out in the main repo during setup
 
@@ -73,7 +76,7 @@ This lets two milestones run in parallel without mixing in `dev`. Each milestone
    - Branch: `integration/<milestone>`
    - Worktree: `.claude/worktrees/<milestone>/integration/`
 2. **Sub-agent worktrees branch from `integration/<milestone>`**, not directly from `dev`, so later sub-agents in the same milestone see the work of earlier ones.
-3. **As each sub-agent finishes**, merge its branch into `integration/<milestone>` inside the integration worktree, via harness:merge-handler. `--no-ff`; conflicts resolved there.
+3. **As each sub-agent finishes**, the orchestrator merges its branch into `integration/<milestone>` inside the integration worktree, via harness:merge-handler. `--no-ff`; conflicts resolved there.
 4. **Periodically merge `dev → integration/<milestone>`** to stay current with anything else that lands on `dev` (other milestones, hotfixes, ad-hoc work). Do it whenever `dev` moves and you want to surface conflicts early.
 5. **When the milestone is complete**, merge `integration/<milestone> → dev` via harness:merge-handler, which runs the full test suite first. One merge, one coherent diff for the whole milestone.
 6. **Tear down.** Delete the integration branch (local and remote) and remove the integration worktree: `git worktree remove .claude/worktrees/<milestone>/integration`.
@@ -100,7 +103,7 @@ For per-milestone integration, conflicts also surface between milestone work and
 
 # What NOT to do
 
-- Do not merge into `dev`, `integration/*` or `main` directly — use the harness:merge-handler skill.
+- Do not merge into `dev`, `integration/*` or `main` outside the harness:merge-handler skill. Sub-agents don't merge into them at all.
 - Do not open PRs — use the harness:merge-handler skill.
 - Don't keep ephemeral `integration/*` branches alive once they've landed on `dev`.
 - Don't keep `integration/<milestone>` branches alive once the milestone has landed on `dev`. They're long-lived but not permanent — tear them down at milestone close.
