@@ -1,6 +1,6 @@
 {
   "name": "tracker-github",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "GitHub Issues + Projects tracker module for the harness: ships the harness-tracker command and the ticket-handler skill",
   "author": {
     "name": "Michael Henderson"

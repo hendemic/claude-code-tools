@@ -7,21 +7,24 @@ Project-specific inputs come from the project's `CLAUDE.md` (see "Project contra
 
 Issue tracking is optional. Before any tracker step, run `harness-tracker-status` once with the Bash tool. With a tracker, the tracker steps below use `harness-tracker` (see the harness tracker contract, `contracts/tracker.md` in the harness plugin); without one, skip them — everything else, including the release flow, works the same. Without a tracker, `<milestone>` in branch and worktree names is the slug agreed in `/harness:workstream`.
 
-Every step here is user-initiated. Only merge, open release PRs, merge release PRs or push tags when explicitly asked.
+Who runs this skill:
+- **The `/harness:workstream` orchestrator** merges finished sub-agent branches into `integration/<milestone>` on its own, without being asked. That is the only merge it makes unprompted.
+- **The user** initiates everything else: merges into `dev`, release PRs, release merges and tags. Do those only when explicitly asked.
+- **Sub-agents never run this skill** and never merge into `dev`, `integration/*` or `main`.
 
 # Common rules for every merge
 
 - **Confirm location first.** Run `pwd` and `git branch --show-current` before anything else; sessions drift into agent worktrees. Each merge type below says where it must run. Merges into `dev` run from the main repo root (not a `.claude/worktrees/*` path); merges into `integration/<milestone>` run inside that milestone's integration worktree.
 - **Pull with `--ff-only`** before merging, so a diverged local branch fails loudly instead of creating a stray merge.
 - **Merge with `--no-ff`**, so each landed branch stays a discrete merge commit.
-- **If a pre-merge hook fails:** abort (`git merge --abort`), fix the cause on the source branch (in its worktree), and retry. If the hook needs a prerequisite that isn't available (a service, a container runtime, a database), ask the user to start it. Never bypass with `--no-verify` unless the user explicitly says to.
+- **If a pre-merge hook fails:** abort (`git merge --abort`), fix the cause on the source branch (in its worktree), and retry. As the workstream orchestrator, abort and send the fix to a sub-agent instead (see `/harness:workstream` Step 5c). If the hook needs a prerequisite that isn't available (a service, a container runtime, a database), ask the user to start it. Never bypass with `--no-verify` unless the user explicitly says to.
 - **Lockfile hygiene.** If the source branch changed the project's lockfile (named in `## Harness: lockfile`; if that section is missing, recognise the lockfile of the project's package manager), check the lockfile diff for unrelated version bumps before merging. Adding or removing one dependency can re-resolve unrelated packages. Prefer restoring the target branch's lockfile and re-running the reinstall command from the project contract, so the diff contains only the intended change.
-- **Conflicts.** Resolve them locally on the target branch and commit the resolution. Files listed in `## Harness: conflict hotspots` are the usual suspects; if a resolution needs a judgement call about behaviour, ask the user.
+- **Conflicts.** Resolve them locally on the target branch and commit the resolution. Files listed in `## Harness: conflict hotspots` are the usual suspects; if a resolution needs a judgement call about behaviour, ask the user (as the workstream orchestrator, send it to a sub-agent per `/harness:workstream` Step 5c).
 - **Never force push.**
 
 # Merging a sub-agent branch into `integration/<milestone>`
 
-Used for milestone workstreams, after `/harness:workstream` hands off its manifest. This happens entirely inside the integration worktree — never switch branches in the main repo for it.
+Used for milestone workstreams. The `/harness:workstream` orchestrator runs it as each sub-agent finishes and passes review; the user can also ask for it (e.g. for a branch the orchestrator held back). This happens entirely inside the integration worktree — never switch branches in the main repo for it.
 
 1. `cd <repo-root>/.claude/worktrees/<milestone>/integration` and confirm `git branch --show-current` is `integration/<milestone>`.
 2. `git fetch origin && git pull --ff-only`.
@@ -112,6 +115,6 @@ Do these in order, and report each result:
 
 # Constraints
 
-- Only merge to `dev` or `integration/*`, open PRs to `main`, merge release PRs or push tags when explicitly asked. A request like "open the release PR and tag it when it merges" covers the whole release sequence, but still stop for the approval confirmation.
+- Only merge to `dev`, open PRs to `main`, merge release PRs or push tags when explicitly asked. Merging sub-agent branches into `integration/<milestone>` is the one exception, and only for the workstream orchestrator. A request like "open the release PR and tag it when it merges" covers the whole release sequence, but still stop for the approval confirmation.
 - Never force push. Never move or delete a pushed tag; if a tag is wrong, tell the user and agree on a new patch version.
 - Never attribute commits, merge commits, PRs, tags or releases to Claude or Anthropic. No `Co-Authored-By` trailers and no "Generated with Claude Code" lines, even if a session reminder supplies them. The harness version-control rule takes precedence.

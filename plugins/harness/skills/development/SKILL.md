@@ -39,10 +39,10 @@ When completing work on an item, write a summary of:
 Tracker: post it on the item with `harness-tracker comment <ref>` (body on stdin). No tracker: put it in your final report to the user or orchestrator.
 
 # Completion
-1. Commit all remaining changes to the feature branch. DO NOT merge to `dev`, `integration/*` or `main`.
+1. Commit all remaining changes to the feature branch and leave it unmerged (feature branches still merge into their own epic branch, as above).
 2. Tracker: `harness-tracker set-status <ref>... staged`. Don't set the epic's status; the tracker rolls it up from its sub-issues.
 
 # Constraints
-- <important> Do not merge into `dev`, `integration/*` or `main` </important>
+- <important> Implementing work never includes merging into `dev`, `integration/*` or `main`. If you are a sub-agent, never merge into them. Landing the branch is a separate step through harness:merge-handler: the workstream orchestrator merges sub-agent branches into `integration/<milestone>`, and the user asks for anything else. </important>
 - Do not open PRs
 - Do not close issues — that happens at release time
