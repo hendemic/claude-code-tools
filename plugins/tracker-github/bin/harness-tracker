@@ -1,0 +1,669 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# harness-tracker for GitHub Issues + GitHub Projects (v2).
+# Implements the harness tracker contract (plugins/harness/contracts/tracker.md)
+# as a thin dispatcher over the ticket-handler scripts.
+#
+# Project configuration (only needed for status and size):
+#   TRACKER_GITHUB_PROJECT_ID       Project node ID (PVT_...). If unset, the one
+#                                   open project linked to the repository is used.
+#   TRACKER_GITHUB_STATUS_FIELD_ID  Optional; defaults to the field named "Status".
+#   TRACKER_GITHUB_SIZE_FIELD_ID    Optional; defaults to the field named "Size".
+#   TRACKER_GITHUB_STATUS_MAP       Optional neutral=Option overrides, comma separated,
+#                                   e.g. "complete=Shipped,abandoned=Dropped". Without
+#                                   an override, the board's Status options are matched
+#                                   case-insensitively against built-in candidates
+#                                   (complete: Complete|Done|Closed, and so on).
+
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+SCRIPTS="$HERE/../skills/ticket-handler/scripts"
+
+usage() {
+    cat <<'EOF'
+harness-tracker (tracker-github): GitHub Issues + Projects
+
+Contract subcommands (see the harness plugin's contracts/tracker.md):
+  help                                   Show this help
+  resolve <milestone>                    Open work items in a milestone, epics expanded
+  resolve --items <ref>...               Same, for a list of issue numbers
+  read <ref>...                          Full text of each issue
+  fields <ref>...                        TSV: ID STATUS SIZE LABELS
+  set-status <ref>... <status> [--no-rollup] [--dry-run]
+                                         backlog|ready|in-progress|staged|complete|abandoned;
+                                         parents (sub-issue parents) roll up from their children
+  comment <ref>                          Add a comment; body read from stdin
+  create --title T [--body-file F|-] [--label L] [--milestone M] [--status S] [--size Z]
+                                         Create an issue; first stdout line is its number
+  close-milestone <milestone> [--dry-run]
+                                         Close open issues, mark all complete, close milestone;
+                                         epics with unfinished sub-issues elsewhere are skipped
+
+tracker-github extras:
+  list [--all] [--milestone M] [--label L]   List issues (TSV)
+  set-size <ref>... <small|medium|large>     Set the project Size field
+  project                                    Show the GitHub Project in use
+
+Refs are issue numbers; a leading '#' is accepted.
+Exit codes: 0 ok, 1 failed, 2 usage error, 3 unsupported subcommand.
+EOF
+}
+
+die() { echo "harness-tracker: $1" >&2; exit "${2:-1}"; }
+# Several ticket-handler scripts pipe through jq.
+need_jq() { command -v jq >/dev/null || die "jq is required for this operation; install jq"; }
+usage_err() { die "$1 (see 'harness-tracker help')" 2; }
+
+# Normalise refs into REFS: strip '#', require digits.
+parse_refs() {
+    REFS=()
+    local r
+    for r in "$@"; do
+        r="${r#\#}"
+        [[ "$r" =~ ^[0-9]+$ ]] || usage_err "not an issue number: $r"
+        REFS+=("$r")
+    done
+}
+joined_refs() { local IFS=,; echo "${REFS[*]}"; }
+
+# Neutral <-> GitHub Project vocabularies.
+# Status options differ per board, so the board's actual options (STATUS_OPTIONS,
+# one per line, loaded once per invocation) are matched against candidates.
+NEUTRAL_STATUSES=(backlog ready in-progress staged complete abandoned)
+status_candidates() {
+    case "$1" in
+        backlog) echo "Backlog|Todo" ;;
+        ready) echo "Ready" ;;
+        in-progress) echo "In Progress|Doing" ;;
+        staged) echo "Staged|In Review|Review" ;;
+        complete) echo "Complete|Done|Closed" ;;
+        abandoned) echo "Abandoned|Won't Do|Wontfix|Closed" ;;
+        *) return 1 ;;
+    esac
+}
+# Override for a neutral status from TRACKER_GITHUB_STATUS_MAP, or nothing.
+status_override() {
+    local pair IFS=,
+    for pair in ${TRACKER_GITHUB_STATUS_MAP:-}; do
+        [[ "${pair%%=*}" == "$1" ]] && { echo "${pair#*=}"; return 0; }
+    done
+    return 0
+}
+STATUS_OPTIONS=""
+STATUS_OPTIONS_LOADED=false
+load_status_options() {
+    [[ "$STATUS_OPTIONS_LOADED" == true ]] && return 0
+    STATUS_OPTIONS_LOADED=true
+    [[ -n "${STATUS_FIELD_ID:-}" ]] || return 0
+    STATUS_OPTIONS=$(gh api graphql -f query='
+    query($id: ID!) {
+      node(id: $id) { ... on ProjectV2SingleSelectField { options { name } } }
+    }' -f id="$STATUS_FIELD_ID" --jq '.data.node.options[].name' 2>/dev/null) || STATUS_OPTIONS=""
+}
+# Case-insensitive exact match of $1 in the lines of STATUS_OPTIONS; prints the board's spelling.
+find_option() {
+    local opt want="${1,,}"
+    while IFS= read -r opt; do
+        [[ -n "$opt" && "${opt,,}" == "$want" ]] && { echo "$opt"; return 0; }
+    done <<< "$STATUS_OPTIONS"
+    return 1
+}
+# Neutral status -> the board's option name. Exit 3 when the board has no match.
+status_to_gh() {
+    local st="$1" cand opt IFS
+    status_candidates "$st" >/dev/null || usage_err "unknown status: $st"
+    cand=$(status_override "$st")
+    [[ -n "$cand" ]] || cand=$(status_candidates "$st")
+    IFS='|'
+    for c in $cand; do
+        if opt=$(find_option "$c"); then echo "$opt"; return 0; fi
+    done
+    die "this board has no Status option for '$st' (tried: ${cand//|/, }; board options: $(paste -sd, <<< "$STATUS_OPTIONS" | sed 's/,/, /g')); set TRACKER_GITHUB_STATUS_MAP, e.g. \"$st=<Option>\"" 3
+}
+# Board option -> neutral status; unmapped options become other:<lowercase-hyphenated>.
+gh_to_neutral() {
+    local raw="$1" n cand c IFS
+    for n in "${NEUTRAL_STATUSES[@]}"; do
+        cand=$(status_override "$n")
+        [[ -n "$cand" && "${cand,,}" == "${raw,,}" ]] && { echo "$n"; return 0; }
+    done
+    for n in "${NEUTRAL_STATUSES[@]}"; do
+        IFS='|'
+        for c in $(status_candidates "$n"); do
+            [[ "${c,,}" == "${raw,,}" ]] && { echo "$n"; return 0; }
+        done
+    done
+    echo "other:$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+}
+size_to_gh() {
+    case "$1" in
+        small) echo "Small" ;;
+        medium) echo "Medium" ;;
+        large) echo "Large" ;;
+        *) usage_err "unknown size: $1" ;;
+    esac
+}
+to_neutral() {
+    case "$1" in
+        ""|none|"(not in project)"|-) echo "-" ;;
+        *) echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' ;;
+    esac
+}
+status_to_neutral() {
+    case "$1" in
+        ""|none|"(not in project)"|-) echo "-" ;;
+        *) gh_to_neutral "$1" ;;
+    esac
+}
+
+# Resolve PROJECT_ID, STATUS_FIELD_ID, SIZE_FIELD_ID (env first, then discovery).
+# Returns 1 with the reason in PROJECT_ERR when no project is available.
+find_project() {
+    PROJECT_ERR=""
+    PROJECT_ID="${TRACKER_GITHUB_PROJECT_ID:-}"
+    STATUS_FIELD_ID="${TRACKER_GITHUB_STATUS_FIELD_ID:-}"
+    SIZE_FIELD_ID="${TRACKER_GITHUB_SIZE_FIELD_ID:-}"
+    if [[ -z "$PROJECT_ID" ]]; then
+        local repo projects count
+        repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner) \
+            || { PROJECT_ERR="cannot determine the GitHub repository"; return 1; }
+        projects=$(gh api graphql -f query='
+        query($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            projectsV2(first: 20) { nodes { id number title closed } }
+          }
+        }' -f owner="${repo%%/*}" -f name="${repo#*/}" \
+            --jq '.data.repository.projectsV2.nodes[] | select(.closed | not) | "\(.id)\t\(.number)\t\(.title)"' 2>/dev/null) \
+            || { PROJECT_ERR="cannot list GitHub Projects linked to $repo (the gh token needs the project scope: gh auth refresh -s project)"; return 1; }
+        count=$(printf '%s' "$projects" | grep -c . || true)
+        if [[ "$count" -eq 0 ]]; then
+            PROJECT_ERR="no open GitHub Project is linked to $repo; link one or set TRACKER_GITHUB_PROJECT_ID"
+            return 1
+        elif [[ "$count" -gt 1 ]]; then
+            PROJECT_ERR="several GitHub Projects are linked to $repo; set TRACKER_GITHUB_PROJECT_ID to one of:"$'\n'"$projects"
+            return 1
+        fi
+        PROJECT_ID=$(echo "$projects" | cut -f1)
+    fi
+    if [[ -z "$STATUS_FIELD_ID" || -z "$SIZE_FIELD_ID" ]]; then
+        local fields
+        fields=$(gh api graphql -f query='
+        query($id: ID!) {
+          node(id: $id) {
+            ... on ProjectV2 {
+              fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name } } }
+            }
+          }
+        }' -f id="$PROJECT_ID" --jq '.data.node.fields.nodes[] | select(.id != null) | "\(.name)\t\(.id)"' 2>/dev/null) \
+            || { PROJECT_ERR="cannot read the fields of project $PROJECT_ID"; return 1; }
+        [[ -n "$STATUS_FIELD_ID" ]] || STATUS_FIELD_ID=$(echo "$fields" | awk -F'\t' '$1 == "Status" { print $2 }')
+        [[ -n "$SIZE_FIELD_ID" ]] || SIZE_FIELD_ID=$(echo "$fields" | awk -F'\t' '$1 == "Size" { print $2 }')
+    fi
+    return 0
+}
+need_project() { find_project || die "$PROJECT_ERR"; }
+
+labels_of() {
+    gh issue view "$1" --json labels --jq '[.labels[].name] | join(",")'
+}
+
+# Print open sub-issues of an epic as "num<TAB>title<TAB>labels".
+open_children() {
+    need_jq
+    "$SCRIPTS/list-sub-issues.sh" "$1" | awk -F'\t' '$1 ~ /^[0-9]+$/ && $2 == "OPEN" { print $1 "\t" $3 "\t" $4 }'
+}
+
+cmd_resolve() {
+    [[ $# -ge 1 ]] || usage_err "resolve needs a milestone or --items <ref>..."
+    local rows=""  # num<TAB>state<TAB>title<TAB>labels
+    if [[ "$1" == "--items" ]]; then
+        shift
+        [[ $# -ge 1 ]] || usage_err "resolve --items needs at least one ref"
+        parse_refs "$@"
+        local n
+        for n in "${REFS[@]}"; do
+            rows+=$(gh issue view "$n" --json number,state,title,labels \
+                --jq '"\(.number)\t\(.state)\t\(.title)\t\([.labels[].name] | join(","))"')$'\n'
+        done
+    else
+        [[ $# -eq 1 ]] || usage_err "resolve takes one milestone"
+        local title
+        title=$(milestone_title "$1")
+        rows=$(gh issue list --milestone "$title" --state open --limit 1000 \
+            --json number,state,title,labels \
+            --jq '.[] | "\(.number)\t\(.state)\t\(.title)\t\([.labels[].name] | join(","))"')
+    fi
+
+    declare -A seen=()
+    local out="" num state title labels child children
+    # Epics first, so their children carry PARENT even if listed on their own.
+    while IFS=$'\t' read -r num state title labels; do
+        [[ -z "$num" ]] && continue
+        if [[ ",$labels," == *",epic,"* ]]; then
+            children=$(open_children "$num")
+            while IFS=$'\t' read -r child title labels; do
+                [[ -z "$child" || -n "${seen[$child]:-}" ]] && continue
+                seen[$child]=1
+                out+="$child"$'\t'"$title"$'\t'"${labels:--}"$'\t'"$num"$'\n'
+            done <<< "$children"
+        fi
+    done <<< "$rows"
+    while IFS=$'\t' read -r num state title labels; do
+        [[ -z "$num" || "$state" != "OPEN" || -n "${seen[$num]:-}" ]] && continue
+        [[ ",$labels," == *",epic,"* ]] && continue
+        seen[$num]=1
+        out+="$num"$'\t'"$title"$'\t'"${labels:--}"$'\t-'$'\n'
+    done <<< "$rows"
+
+    printf 'ID\tTITLE\tLABELS\tPARENT\n%s' "$out"
+}
+
+# Resolve a milestone pattern to its exact title (same matching as list-issues.sh).
+milestone_title() {
+    local m="$1" title
+    if [[ "$m" =~ ^[0-9]+$ ]]; then
+        title=$(gh api "repos/:owner/:repo/milestones/$m" --jq '.title' 2>/dev/null || true)
+    fi
+    if [[ -z "${title:-}" ]]; then
+        title=$(gh api "repos/:owner/:repo/milestones?state=all&per_page=100" --jq \
+            "[.[] | select(.title | test(\"$m\"; \"i\"))] | .[0].title // empty" 2>/dev/null || true)
+    fi
+    [[ -n "$title" ]] || die "no milestone matching '$m'"
+    echo "$title"
+}
+
+cmd_read() {
+    [[ $# -ge 1 ]] || usage_err "read needs at least one ref"
+    parse_refs "$@"
+    "$SCRIPTS/read-issues.sh" "${REFS[@]}"
+}
+
+cmd_fields() {
+    [[ $# -ge 1 ]] || usage_err "fields needs at least one ref"
+    parse_refs "$@"
+    declare -A status=() size=()
+    if find_project; then
+        need_jq
+        load_status_options
+        local num st sz
+        while IFS=$'\t' read -r num st sz; do
+            [[ "$num" =~ ^[0-9]+$ ]] || continue
+            status[$num]=$(status_to_neutral "$st")
+            size[$num]=$(to_neutral "$sz")
+        done < <("$SCRIPTS/get-project-fields.sh" "$PROJECT_ID" "$(joined_refs)")
+    else
+        echo "harness-tracker: $PROJECT_ERR; STATUS and SIZE are '-'" >&2
+    fi
+    printf 'ID\tSTATUS\tSIZE\tLABELS\n'
+    local n l
+    for n in "${REFS[@]}"; do
+        l=$(labels_of "$n")
+        printf '%s\t%s\t%s\t%s\n' "$n" "${status[$n]:--}" "${size[$n]:--}" "${l:--}"
+    done
+}
+
+# --- Parent/child status rollup -------------------------------------------
+# After statuses change, each changed item's parent (GitHub sub-issue parent) is
+# recomputed from all of its sub-issues: all complete -> complete; all staged or
+# complete -> staged; any in-progress/staged/complete -> in-progress. Abandoned
+# children are ignored (unless all are abandoned, then nothing happens). A parent
+# only moves forward (backlog < ready < in-progress < staged < complete), an
+# abandoned parent is never touched, and a parent that moved is rolled up in turn.
+
+# Statuses known to have just been written (or that would be, under --dry-run),
+# keyed by issue number; they win over what the board reports.
+declare -A KNOWN_STATUS=()
+declare -A ROLLED=()      # parents already visited (cycle guard)
+DRY_RUN=false
+
+status_rank() {
+    case "$1" in
+        backlog|-) echo 0 ;;
+        ready) echo 1 ;;
+        in-progress) echo 2 ;;
+        staged) echo 3 ;;
+        complete) echo 4 ;;
+        *) echo -1 ;;
+    esac
+}
+
+repo_owner_name() {
+    [[ -n "${REPO_OWNER:-}" ]] && return 0
+    local nwo
+    nwo=$(gh repo view --json nameWithOwner --jq .nameWithOwner) || return 1
+    REPO_OWNER="${nwo%%/*}"
+    REPO_NAME="${nwo#*/}"
+}
+
+# Print "num<TAB>parent" (parent '-' when none) for each ref, in one query.
+parents_of() {
+    repo_owner_name || return 1
+    local q="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) {" n
+    for n in "$@"; do q+=" i$n: issue(number: $n) { number parent { number } }"; done
+    q+=" } }"
+    gh api graphql -f query="$q" -f owner="$REPO_OWNER" -f name="$REPO_NAME" \
+        --jq '.data.repository[] | select(. != null) | "\(.number)\t\(.parent.number // "-")"'
+}
+
+# Shared jq: "num<TAB>board status<TAB>state<TAB>stateReason" for an issue; the
+# board status is '-' when the issue isn't on our board (fields never empty, as
+# read would collapse adjacent tabs).
+ITEM_FIELDS='number state stateReason
+  projectItems(first: 10) { nodes { project { id } fieldValues(first: 20) { nodes {
+    ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { id } } } } } } }'
+JQ_STATUS='def board: [.projectItems.nodes[] | select(.project.id == $p) | .fieldValues.nodes[]
+    | select(.field.id? == $f) | .name] | first // "-";
+  def row: "\(.number)\t\(board)\t\(.state)\t\(.stateReason // "-")";'
+
+# Raw board status + issue state -> neutral status (KNOWN_STATUS wins).
+item_neutral() {
+    local num="$1" raw="$2" state="$3" reason="$4"
+    if [[ -n "${KNOWN_STATUS[$num]:-}" ]]; then echo "${KNOWN_STATUS[$num]}"; return; fi
+    if [[ "$raw" != "-" ]]; then gh_to_neutral "$raw"; return; fi
+    if [[ "$state" == CLOSED ]]; then
+        [[ "$reason" == NOT_PLANNED ]] && echo abandoned || echo complete
+    else
+        echo -
+    fi
+}
+
+# Rollup target for a list of child neutral statuses (one per line), or nothing.
+rollup_target() {
+    local st total=0 complete=0 staged=0 started=0
+    while IFS= read -r st; do
+        [[ -z "$st" || "$st" == abandoned ]] && continue
+        total=$((total + 1))
+        case "$st" in
+            complete) complete=$((complete + 1)); staged=$((staged + 1)); started=$((started + 1)) ;;
+            staged) staged=$((staged + 1)); started=$((started + 1)) ;;
+            in-progress) started=$((started + 1)) ;;
+        esac
+    done
+    [[ $total -eq 0 ]] && return 0
+    if [[ $complete -eq $total ]]; then echo complete
+    elif [[ $staged -eq $total ]]; then echo staged
+    elif [[ $started -gt 0 ]]; then echo in-progress
+    fi
+}
+
+# Recompute one parent from its sub-issues; set it if it moves forward, then
+# recurse to its own parent.
+rollup_parent() {
+    local p="$1"
+    [[ -n "${ROLLED[$p]:-}" ]] && return 0
+    ROLLED[$p]=1
+    repo_owner_name || return 1
+    local data
+    data=$(gh api graphql -f query="
+      query(\$owner: String!, \$name: String!, \$num: Int!) {
+        repository(owner: \$owner, name: \$name) {
+          issue(number: \$num) { $ITEM_FIELDS parent { number }
+            subIssues(first: 100) { nodes { $ITEM_FIELDS } } }
+        }
+      }" -f owner="$REPO_OWNER" -f name="$REPO_NAME" -F num="$p" \
+        | jq -r --arg p "$PROJECT_ID" --arg f "$STATUS_FIELD_ID" "$JQ_STATUS"'
+            .data.repository.issue | ("SELF\t" + row + "\t\(.parent.number // "-")"),
+            (.subIssues.nodes[] | "CHILD\t" + row)') || return 1
+
+    local kind num raw state reason grand="-" cur="" children=""
+    while IFS=$'\t' read -r kind num raw state reason extra; do
+        case "$kind" in
+            SELF) cur=$(item_neutral "$num" "$raw" "$state" "$reason"); grand="$extra"
+                  [[ "$raw" != "-" || -n "${KNOWN_STATUS[$num]:-}" ]] || cur="not-on-board" ;;
+            CHILD) children+=$(item_neutral "$num" "$raw" "$state" "$reason")$'\n' ;;
+        esac
+    done <<< "$data"
+    [[ -n "$children" ]] || return 0
+
+    local target
+    target=$(rollup_target <<< "$children")
+    [[ -n "$target" ]] || return 0
+    case "$cur" in
+        abandoned) return 0 ;;
+        not-on-board) echo "harness-tracker: #$p is not on the project board; not rolling it up to $target" >&2; return 0 ;;
+    esac
+    local cr
+    cr=$(status_rank "$cur")
+    [[ $cr -lt 0 ]] && { echo "harness-tracker: #$p has status '$cur'; not rolling it up to $target" >&2; return 0; }
+    [[ $(status_rank "$target") -gt $cr ]] || return 0
+
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "[dry-run] would roll up #$p → $target (was $cur)"
+    else
+        "$SCRIPTS/set-status.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$p" "$(status_to_gh "$target")" >/dev/null || return 1
+        echo "rolled up #$p → $target"
+    fi
+    KNOWN_STATUS[$p]="$target"
+    [[ "$grand" == "-" ]] || rollup_parent "$grand"
+}
+
+# Roll up the distinct parents of the given items. Failures are warnings: the
+# items themselves were already updated.
+rollup_from() {
+    local pairs num parent
+    declare -A done_parents=()
+    pairs=$(parents_of "$@") || { echo "harness-tracker: warning: could not look up parent items; status not rolled up" >&2; return 0; }
+    while IFS=$'\t' read -r num parent; do
+        [[ -z "$parent" || "$parent" == "-" || -n "${done_parents[$parent]:-}" ]] && continue
+        done_parents[$parent]=1
+        rollup_parent "$parent" || echo "harness-tracker: warning: could not roll up #$parent" >&2
+    done <<< "$pairs"
+}
+
+cmd_set_status() {
+    local args=() rollup=true a
+    for a in "$@"; do
+        case "$a" in
+            --dry-run) DRY_RUN=true ;;
+            --no-rollup) rollup=false ;;
+            -*) usage_err "unknown set-status option: $a" ;;
+            *) args+=("$a") ;;
+        esac
+    done
+    set -- "${args[@]}"
+    [[ $# -ge 2 ]] || usage_err "set-status needs <ref>... <status>"
+    local st="${*: -1}"
+    set -- "${@:1:$#-1}"
+    local gh_status
+    status_candidates "$st" >/dev/null || usage_err "unknown status: $st"
+    parse_refs "$@"
+    need_project
+    need_jq
+    [[ -n "$STATUS_FIELD_ID" ]] || die "the GitHub Project has no 'Status' field; set TRACKER_GITHUB_STATUS_FIELD_ID"
+    load_status_options
+    gh_status=$(status_to_gh "$st")
+    local n
+    if [[ "$DRY_RUN" == true ]]; then
+        for n in "${REFS[@]}"; do echo "[dry-run] would set #$n → $gh_status"; done
+    else
+        "$SCRIPTS/set-status.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$(joined_refs)" "$gh_status"
+    fi
+    for n in "${REFS[@]}"; do KNOWN_STATUS[$n]="$st"; done
+    [[ "$rollup" == true ]] && rollup_from "${REFS[@]}"
+    return 0
+}
+
+cmd_set_size() {
+    [[ $# -ge 2 ]] || usage_err "set-size needs <ref>... <size>"
+    local sz="${*: -1}"
+    set -- "${@:1:$#-1}"
+    local gh_size
+    gh_size=$(size_to_gh "$sz")
+    parse_refs "$@"
+    need_project
+    [[ -n "$SIZE_FIELD_ID" ]] || die "the GitHub Project has no 'Size' field; set TRACKER_GITHUB_SIZE_FIELD_ID"
+    "$SCRIPTS/set-size.sh" "$PROJECT_ID" "$SIZE_FIELD_ID" "$(joined_refs)" "$gh_size"
+}
+
+cmd_comment() {
+    [[ $# -eq 1 ]] || usage_err "comment takes exactly one ref (body on stdin)"
+    parse_refs "$1"
+    gh issue comment "${REFS[0]}" --body-file -
+}
+
+cmd_create() {
+    local title="" body="" label="" milestone="" st="" sz=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="${2:-}"; shift 2 ;;
+            --body-file)
+                if [[ "${2:-}" == "-" ]]; then body=$(cat); else body=$(cat "${2:?}"); fi
+                shift 2 ;;
+            --label) label="${2:-}"; shift 2 ;;
+            --milestone) milestone="${2:-}"; shift 2 ;;
+            --status) st="${2:-}"; status_candidates "$st" >/dev/null || usage_err "unknown status: $st"; shift 2 ;;
+            --size) sz=$(size_to_gh "${2:-}"); shift 2 ;;
+            *) usage_err "unknown create option: $1" ;;
+        esac
+    done
+    [[ -n "$title" ]] || usage_err "create needs --title"
+
+    local out
+    if find_project; then
+        if [[ -n "$st" ]]; then
+            need_jq
+            load_status_options
+            st=$(status_to_gh "$st")
+        fi
+        local args=(--title "$title")
+        [[ -n "$body" ]] && args+=(--body "$body")
+        [[ -n "$label" ]] && args+=(--label "$label")
+        [[ -n "$milestone" ]] && args+=(--milestone "$milestone")
+        [[ -n "$st" ]] && args+=(--status "$st")
+        [[ -n "$sz" ]] && args+=(--size "$sz")
+        out=$("$SCRIPTS/create-issue.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$SIZE_FIELD_ID" "${args[@]}")
+    else
+        echo "harness-tracker: $PROJECT_ERR; creating the issue without status or size" >&2
+        local args=(issue create --title "$title" --body "$body")
+        [[ -n "$label" ]] && args+=(--label "$label")
+        [[ -n "$milestone" ]] && args+=(--milestone "$milestone")
+        out=$(gh "${args[@]}")
+    fi
+    # First line: the new issue number; then the script's own output.
+    echo "$out" | grep -oE 'issues/[0-9]+' | head -1 | cut -d/ -f2
+    echo "$out"
+}
+
+cmd_close_milestone() {
+    local m="" dry=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) dry=true; shift ;;
+            -*) usage_err "unknown close-milestone option: $1" ;;
+            *) [[ -z "$m" ]] || usage_err "close-milestone takes one milestone"; m="$1"; shift ;;
+        esac
+    done
+    [[ -n "$m" ]] || usage_err "close-milestone needs a milestone"
+
+    local title number all
+    title=$(milestone_title "$m")
+    number=$(gh api "repos/:owner/:repo/milestones?state=all&per_page=100" \
+        --jq ".[] | select(.title == \"$title\") | .number")
+
+    # Check prerequisites before changing anything.
+    local have_project=false
+    if find_project; then
+        have_project=true
+        [[ "$dry" == true ]] || need_jq
+    else
+        echo "harness-tracker: $PROJECT_ERR; status updates will be skipped" >&2
+    fi
+
+    # Resolve the board's "complete" option before changing anything.
+    local done_status=""
+    if [[ "$have_project" == true ]]; then
+        load_status_options
+        done_status=$(status_to_gh complete)
+    fi
+
+    # Epics (issues with sub-issues) are closed and completed only when every
+    # sub-issue is either in this milestone or already complete/abandoned.
+    local skip="" epic_rows
+    [[ "$dry" == true ]] && DRY_RUN=true
+    if [[ "$have_project" == true ]]; then
+        need_jq
+        repo_owner_name || die "cannot determine the GitHub repository"
+        epic_rows=$(gh api graphql --paginate -f query="
+          query(\$owner: String!, \$name: String!, \$num: Int!, \$endCursor: String) {
+            repository(owner: \$owner, name: \$name) {
+              milestone(number: \$num) {
+                issues(first: 25, after: \$endCursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes { number subIssues(first: 50) { nodes { $ITEM_FIELDS milestone { number } } } }
+                }
+              }
+            }
+          }" -f owner="$REPO_OWNER" -f name="$REPO_NAME" -F num="$number" \
+            | jq -r --arg p "$PROJECT_ID" --arg f "$STATUS_FIELD_ID" "$JQ_STATUS"'
+                .data.repository.milestone.issues.nodes[] | .number as $e
+                | .subIssues.nodes[] | "\($e)\t" + row + "\t\(.milestone.number // "-")"') \
+            || die "cannot read the sub-issues of milestone '$title'"
+        declare -A pending=()
+        local e c raw state reason cm st
+        while IFS=$'\t' read -r e c raw state reason cm; do
+            [[ -z "$e" ]] && continue
+            [[ "$cm" == "$number" ]] && continue
+            st=$(item_neutral "$c" "$raw" "$state" "$reason")
+            [[ "$st" == complete || "$st" == abandoned ]] && continue
+            pending[$e]+=" #$c ($st)"
+        done <<< "$epic_rows"
+        for e in "${!pending[@]}"; do
+            echo "Skipping epic #$e: sub-issues outside this milestone are not complete:${pending[$e]}"
+            skip+="${skip:+,}$e"
+        done
+    fi
+
+    # 1. Close open issues, except skipped epics.
+    local args=("$title")
+    [[ "$dry" == true ]] && args+=(--dry-run)
+    [[ -n "$skip" ]] && args+=(--skip "$skip")
+    "$SCRIPTS/close-milestone.sh" "${args[@]}"
+
+    # 2. Mark every issue in the milestone, except skipped epics, complete on the
+    # project board, then roll up parents outside the milestone.
+    all=$(gh issue list --milestone "$title" --state all --limit 1000 --json number --jq '.[].number' \
+        | { grep -vxF -f <(tr , '\n' <<< "${skip:-none}") || true; } | paste -sd,)
+    if [[ -n "$all" && "$have_project" == true ]]; then
+        if [[ "$dry" == true ]]; then
+            echo "  [dry-run] Would set status $done_status on: $all"
+        else
+            "$SCRIPTS/set-status.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$all" "$done_status"
+        fi
+        local n
+        IFS=, read -ra REFS <<< "$all"
+        for n in "${REFS[@]}"; do KNOWN_STATUS[$n]=complete; done
+        rollup_from "${REFS[@]}"
+    fi
+
+    # 3. Close the milestone itself.
+    if [[ "$dry" == true ]]; then
+        echo "  [dry-run] Would close milestone '$title' (#$number)"
+    else
+        gh api -X PATCH "repos/:owner/:repo/milestones/$number" -f state=closed --silent
+        echo "Closed milestone '$title'"
+    fi
+}
+
+cmd_project() {
+    need_project
+    printf 'PROJECT_ID\t%s\nSTATUS_FIELD_ID\t%s\nSIZE_FIELD_ID\t%s\n' \
+        "$PROJECT_ID" "${STATUS_FIELD_ID:--}" "${SIZE_FIELD_ID:--}"
+}
+
+[[ $# -ge 1 ]] || { usage; exit 2; }
+sub="$1"
+shift
+case "$sub" in
+    help|--help|-h) usage ;;
+    resolve) cmd_resolve "$@" ;;
+    read) cmd_read "$@" ;;
+    fields) cmd_fields "$@" ;;
+    set-status) cmd_set_status "$@" ;;
+    comment) cmd_comment "$@" ;;
+    create) cmd_create "$@" ;;
+    close-milestone) cmd_close_milestone "$@" ;;
+    list) "$SCRIPTS/list-issues.sh" "$@" ;;
+    set-size) cmd_set_size "$@" ;;
+    project) cmd_project ;;
+    *) echo "harness-tracker: unsupported subcommand: $sub" >&2; exit 3 ;;
+esac

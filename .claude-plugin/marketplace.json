@@ -8,12 +8,17 @@
     {
       "name": "harness",
       "source": "./plugins/harness",
-      "description": "Dev process harness: ticket handling, git flow, merge/release, workstream orchestration, and dev/test subagents"
+      "description": "Dev process harness: git flow, merge/release, workstream orchestration, and dev/test subagents; issue tracking is an optional module"
     },
     {
       "name": "harness-rust",
       "source": "./plugins/harness-rust",
       "description": "Rust coding conventions for the dev process harness"
+    },
+    {
+      "name": "tracker-github",
+      "source": "./plugins/tracker-github",
+      "description": "GitHub Issues + Projects tracker module for the harness (harness-tracker command, ticket-handler skill)"
     }
   ]
 }

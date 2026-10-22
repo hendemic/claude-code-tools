@@ -1,7 +1,7 @@
 {
   "name": "harness",
-  "version": "0.2.0",
-  "description": "Dev process harness: ticket handling, git flow, merge/release, workstream orchestration, and dev/test subagents",
+  "version": "0.0.1",
+  "description": "Dev process harness: git flow, merge/release, workstream orchestration, and dev/test subagents; issue tracking is an optional module",
   "author": {
     "name": "Michael Henderson"
   },
