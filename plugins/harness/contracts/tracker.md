@@ -6,13 +6,13 @@ A tracker module is a Claude Code plugin that ships an executable `bin/harness-t
 
 ## Detection
 
-The harness SessionStart hook runs `which -a harness-tracker` and reports one of:
+The `harness` plugin ships `harness-tracker-status`, which runs `which -a harness-tracker` and prints one of:
 
 - **none**: no tracker. Every issue, status, comment, and milestone operation is skipped; work items come from the user's request.
 - **active**: exactly one tracker. Use `harness-tracker` as described below.
-- **conflict**: more than one plugin ships `harness-tracker`. The first on `PATH` wins silently; the hook prints a warning naming both. Enable only one tracker module per project.
+- **conflict**: more than one enabled plugin ships `harness-tracker`. The first on `PATH` wins silently; the warning names every copy and the winner. Enable only one tracker module per project.
 
-A sub-agent that did not see the hook's output checks for itself with `command -v harness-tracker`.
+Claude Code adds plugin `bin/` directories to `PATH` for the Bash tool but not for hooks, so the harness SessionStart hook cannot decide this itself: it tells the session to run `harness-tracker-status` once, with the Bash tool, before the first tracker operation. Sub-agents do the same (or `command -v harness-tracker`) since they don't see the hook's output.
 
 ## Concepts
 
