@@ -1,21 +1,29 @@
 ---
 name: ticket-handler
-description: Create, list, and manage GitHub issues. Use when the user asks to create an issue, check issues, or pull issue details.
+description: Create, list, and manage GitHub issues and their GitHub Project fields through the harness-tracker command. Use when the user asks to create an issue, check issues, or pull issue details, and for guidance on writing and sizing issues.
 ---
 
-# Reading issues
-To pull issues or tickets to work on, you have a series of scripts available to help:
+# The `harness-tracker` command
+This plugin ships `harness-tracker` (on `PATH` while the plugin is enabled). It implements the harness tracker contract (`contracts/tracker.md` in the `harness` plugin) over GitHub Issues and a GitHub Project, and is the way to touch issues, statuses, and milestones. Run `harness-tracker help` for the full usage.
 
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/list-issues.sh` | List issues with filtering | `--all`, `--milestone "0.0.2"`, `--milestone 3`, `--label feature` |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/read-issues.sh` | Read full issue text | `<number> [number...]`, `1,2,5`, or `1-10` |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/get-project-fields.sh` | Get Status and Size from GitHub Project | `<project-id> <numbers>` (e.g., `PVT_abc 1,2,5`) |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/set-status.sh` | Update issue Status in GitHub Project | `<project-id> <status-field-id> <numbers> <status>` (e.g., `PVT_abc PVTSSF_xyz 1,2,5 "In Progress"`) |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/set-size.sh` | Update issue Size in GitHub Project | `<project-id> <size-field-id> <numbers> <size>` (e.g., `PVT_abc PVTSSF_xyz 1,2,5 "Small"`) |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/list-sub-issues.sh` | List sub-issues of an epic | `<number> [number...]`, `58,59,60`, or `58-60` |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/create-issue.sh` | Create issue, add to project, set status and size | `<project-id> <status-field-id> <size-field-id> --title "..." [--body "..." --label feature --milestone "..." --status "Ready" --size "Small"]` |
-| `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/close-milestone.sh` | Close all open issues in a milestone | `"0.0.2"` or `--id 3`, supports `--dry-run` |
+| Subcommand | Purpose |
+|--------|---------|
+| `harness-tracker resolve <milestone>` / `resolve --items 42 43` | Open work items in a milestone or issue list, epics expanded into sub-issues (TSV) |
+| `harness-tracker read 42 43` | Full issue text |
+| `harness-tracker fields 42 43` | Status, Size, and labels (TSV) |
+| `harness-tracker set-status 42 43 <status>` | Move issues on the project board |
+| `harness-tracker set-size 42 <small\|medium\|large>` | Set the Size field |
+| `harness-tracker comment 42 < body.md` | Comment on an issue (body from stdin) |
+| `harness-tracker create --title "..." [--body-file f\|-] [--label feature] [--milestone "..."] [--status ready] [--size small]` | Create an issue, add it to the project, set Status and Size; prints the new number first |
+| `harness-tracker list [--all] [--milestone M] [--label L]` | List issues |
+| `harness-tracker close-milestone <milestone> [--dry-run]` | Close the milestone's open issues, mark them all Complete, close the milestone |
+
+Statuses on the command line are neutral (`backlog`, `ready`, `in-progress`, `staged`, `complete`, `abandoned`); the command maps them to the project's Status options below. Sizes are `small`, `medium`, `large`.
+
+## Setup
+- `gh` authenticated with the `project` scope (`gh auth refresh -s project`), and `jq` installed.
+- The repository is linked to exactly one open GitHub Project with single-select fields named `Status` and `Size`. If several projects are linked, or the fields are named differently, set these in the project's `.claude/settings.json` under `env`: `TRACKER_GITHUB_PROJECT_ID` (the `PVT_...` node ID), and optionally `TRACKER_GITHUB_STATUS_FIELD_ID` and `TRACKER_GITHUB_SIZE_FIELD_ID`. `harness-tracker project` shows what is in use.
+- The underlying scripts live in `${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/`; call `harness-tracker` rather than the scripts.
 
 # Writing issues
 When writing issues, make sure to include:
