@@ -36,7 +36,7 @@ Run from the project root.
 3. Add any `## Harness: …` sections that apply to the project's `CLAUDE.md` (see [Project contract](#project-contract)).
 4. If using `tracker-github`, check the [tracker requirements](#tracker-github).
 5. Install conventions for the project's languages: `<harness>/install-conventions.sh --project . add rust`, where `<harness>` is a local clone of this repo (`git clone git@github.com:hendemic/claude-code-tools.git`). `list` shows what's available; see [Conventions](#conventions).
-6. Commit `.claude/settings.json`, `CLAUDE.md`, and any `.claude/rules`, `.claude/skills` and `.claude/conventions.lock` from step 5.
+6. Commit `.claude/settings.json`, `CLAUDE.md`, and any `.claude/rules/conventions`, `.claude/skills` and `.claude/conventions.lock` from step 5.
 7. Start a new `claude` session and trust the folder. Check that:
    - `/plugin` lists the `@hendemic-harness` plugins;
    - `harness-tracker-status` prints `active` with a tracker, `none` without one. `CONFLICT` means more than one tracker is enabled.
@@ -56,7 +56,7 @@ Optional sections in the project's `CLAUDE.md`. Leave out any that don't apply.
 
 ## Conventions
 
-Coding conventions live in `conventions/<name>/`, each with a `convention.conf` (`description=…`, `kind=rule|skill`). `install-conventions.sh` copies them into a project: a `rule` becomes a path-scoped file in `.claude/rules/` (e.g. `rust.md` loads when Claude reads a `.rs` file), a `skill` becomes `.claude/skills/<name>/`. The copies are committed with the project; `.claude/conventions.lock` records what was installed so updates can tell harness changes from local edits.
+Coding conventions live in `conventions/<name>/`, each with a `convention.conf` (`description=…`, `kind=rule|skill`). `install-conventions.sh` copies them into a project: a `rule` becomes a path-scoped file in `.claude/rules/conventions/` (e.g. `rust.md` loads when Claude reads a `.rs` file), a `skill` becomes `.claude/skills/<name>/`. The copies are committed with the project; `.claude/conventions.lock` records what was installed so updates can tell harness changes from local edits.
 
 Run it from a local clone of this repo (agents need one too). `--project` defaults to the current directory, which should be the project's git root.
 

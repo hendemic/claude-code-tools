@@ -2,7 +2,8 @@
 # Copy language and architecture conventions from conventions/ into a
 # project's .claude/ directory.
 #
-# Rule conventions (kind=rule) are path-scoped files copied to .claude/rules/.
+# Rule conventions (kind=rule) are path-scoped files copied to
+# .claude/rules/conventions/ (Claude Code loads .claude/rules/ recursively).
 # Skill conventions (kind=skill) are directories copied to .claude/skills/<name>/.
 # Each copied file is recorded in .claude/conventions.lock so later runs can
 # tell an upstream change ("update available") from a local edit ("locally
@@ -36,7 +37,8 @@ Options:
   -h, --help     Show this help
 
 Statuses: not installed, installed, update available, locally modified.
-Commit .claude/rules, .claude/skills and .claude/conventions.lock afterwards.
+Rules go to .claude/rules/conventions/, skills to .claude/skills/<name>/.
+Commit those and .claude/conventions.lock afterwards.
 EOF
 }
 
@@ -104,7 +106,7 @@ source_files() {  # <name> -> paths relative to the convention dir
 
 dest_for() {  # <name> <kind> <rel> -> path relative to the project
     case "$2" in
-        rule) echo ".claude/rules/$3" ;;
+        rule) echo ".claude/rules/conventions/$3" ;;
         skill) echo ".claude/skills/$1/$3" ;;
         *) echo "Unknown kind '$2' for $1" >&2; return 1 ;;
     esac
@@ -311,7 +313,7 @@ summary() {
     fi
     [ ${#CHANGES[@]} -gt 0 ] || [ ${#SKIPPED[@]} -gt 0 ] || echo "Nothing changed."
     if [ ${#CHANGES[@]} -gt 0 ]; then
-        echo "Commit .claude/rules, .claude/skills and .claude/conventions.lock in $PROJECT."
+        echo "Commit .claude/rules/conventions, .claude/skills and .claude/conventions.lock in $PROJECT."
     fi
     # Drop an empty lock so a full remove leaves nothing behind.
     if [ -f "$LOCK" ] && [ -z "$(lock_entries)" ]; then rm -f "$LOCK"; fi
