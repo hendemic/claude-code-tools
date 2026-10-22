@@ -5,7 +5,7 @@ A personal Claude Code dev-process harness, packaged as a plugin marketplace nam
 | Plugin | What it provides |
 | --- | --- |
 | `harness` | Skills `development`, `git-flow`, `merge-handler`, `ticket-handler`; commands `/harness:issue`, `/harness:workstream`; agents `harness:dev-agent-sm`, `harness:dev-agent-lg`, `harness:test-agent`; a SessionStart hook that loads the version-control rules |
-| `harness-rust` | Skill `rust-conventions` for writing and reviewing Rust |
+| `harness-rust` | Skill `rust-conventions` for writing, testing, and reviewing Rust |
 
 Everything is namespaced by plugin, e.g. `/harness:workstream 0.6.9` or `harness:ticket-handler`.
 
@@ -26,7 +26,7 @@ Then enable the plugins in `.claude/settings.json`. The finished file looks like
       "source": {
         "source": "github",
         "repo": "hendemic/claude-code-tools",
-        "ref": "v0.1.0"
+        "ref": "v0.2.0"
       }
     }
   },
@@ -40,6 +40,44 @@ Then enable the plugins in `.claude/settings.json`. The finished file looks like
 Commit `.claude/settings.json`. Once a collaborator trusts the folder, Claude Code fetches the marketplace and loads the plugins; no separate install step is needed.
 
 **Pinned vs floating.** With `"ref": "vX.Y.Z"` the project stays on that release. Leave `ref` out to follow the default branch, picking up whatever version the plugin manifests declare on it.
+
+## Project contract
+
+The harness is project-agnostic. Anything project-specific lives in the project's own `CLAUDE.md`, under optional `## Harness: <name>` sections that the skills, commands, and agents read:
+
+| Section | Contents | Used by | If absent |
+| --- | --- | --- | --- |
+| `## Harness: escalation signals` | Paths, keywords, or kinds of work that always go to `harness:dev-agent-lg`, regardless of Size | `/harness:workstream` | No escalation; agents are picked by Size and labels only |
+| `## Harness: quality gates` | Typecheck, format, lint, and test commands; which are required; prerequisites (services that must be running) | `harness:test-agent`, `harness:merge-handler` | test-agent uses the project's standard commands and says which it ran; merge-handler asks the user before the milestone-close gate |
+| `## Harness: testing layout` | Where tests live per layer, shared helpers, frameworks, unit vs integration per layer | `harness:test-agent` | Infer from existing tests; ask before inventing a layout |
+| `## Harness: user-only checks` | Checks agents must not run; the user runs them before a release | `harness:test-agent`, `harness:merge-handler` | No release reminder; nothing is off limits beyond the usual rules |
+| `## Harness: lockfile` | Lockfile name and the reinstall command | `harness:merge-handler` | Recognise the package manager's lockfile from the repo |
+| `## Harness: conflict hotspots` | Files that commonly conflict when parallel work merges | `harness:git-flow`, `harness:merge-handler`, `/harness:workstream` | Review conflicts case by case |
+
+A minimal example:
+
+```markdown
+## Harness: escalation signals
+- Anything under `db/migrations/` or mentioning a schema change
+- Changes to `src/auth/`
+
+## Harness: quality gates
+- Required: `make typecheck`, `make fmt-check`, `make lint`
+- Full suite: `make test` (integration tier needs the local database running: `make db-up`)
+
+## Harness: testing layout
+- Unit tests next to the code in `src/**/*_test.*`; integration tests in `tests/integration/`
+- Shared fixtures in `tests/helpers/`; integration tests use a real database, never a mock
+
+## Harness: user-only checks
+- End-to-end browser suite: `make e2e`
+
+## Harness: lockfile
+- `package-lock.json`; reinstall with `npm install`
+
+## Harness: conflict hotspots
+- `src/strings.json`, sequentially numbered files in `db/migrations/`
+```
 
 ## Upgrade a pinned project
 
