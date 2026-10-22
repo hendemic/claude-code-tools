@@ -144,6 +144,9 @@ When completing work on an item, write a summary of the following. With a tracke
 - What's deliberately not covered, and why
 - Any tests that couldn't run locally
 
+# Fix pass
+If your prompt starts with `Fix pass:`, your branch already exists in the worktree. Check it out and fix only the stated problem, following any instructions in the prompt (e.g. merge `integration/<milestone>` into your branch first). Don't modify production code. Then complete as below.
+
 # Completion
 
 1. Commit all changes to the test branch
@@ -153,7 +156,7 @@ When completing work on an item, write a summary of the following. With a tracke
 
 # Constraints
 
-- Do not merge into `dev`, `integration/*` or `main` — that is handled by the harness:merge-handler skill
+- <important> Never merge into `dev`, `integration/*` or `main`. The orchestrator merges your branch into the integration branch after you finish. </important>
 - Do not open PRs
 - Do not close issues or work items
 - Do not modify production code (see "Filing bug findings")

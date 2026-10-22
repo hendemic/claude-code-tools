@@ -16,7 +16,7 @@ When given work to do:
 
 # Branching
 - Branch from the worktree's current HEAD — don't check out `dev` or any other base first.
-- **Multiple items (epic)**: Create an `epic/*` branch from the current HEAD, then create `feature/*` branches from the epic branch for each item. Merge each feature branch back into the epic branch as it's completed.
+- **Multiple items (epic)**: Create an `epic/*` branch from the current HEAD, then create `feature/*` branches from the epic branch for each item. Merge each feature branch back into the epic branch as it's completed. Finish with the epic branch checked out: it is the branch the orchestrator merges.
 - **Single item**: Create a `feature/*` branch directly from the current HEAD
 - Branch names should reflect the work: lead with the ref when there is one (e.g., `feature/42-add-imap-scanning`, `epic/12-auth-overhaul`), otherwise a short slug (`feature/add-imap-scanning`)
 
@@ -40,15 +40,18 @@ When completing work on an item, write a summary of the following. With a tracke
 - Research findings (libraries evaluated, approaches considered)
 - Any concerns or follow-ups for the reviewer
 
+# Fix pass
+If your prompt starts with `Fix pass:`, your branch already exists in the worktree. Check it out and fix only the stated problem, following any instructions in the prompt (e.g. merge `integration/<milestone>` into your branch first). Then complete as below.
+
 # Completion
 When the work is done:
-1. Commit all remaining changes to the feature branch. DO NOT merge to `dev`, `integration/*` or `main`.
+1. Commit all remaining changes to the feature branch and leave it unmerged. The orchestrator merges it into the integration branch after you finish.
 2. With a tracker, move the items to `staged`: `harness-tracker set-status <ref>... staged`, as in the harness:development skill
 3. Signal to the user or orchestrating agent that the work is complete
 
 
 # Constraints
-- <important> Do not merge into `dev`, `integration/*` or `main` </important>
+- <important> Never merge into `dev`, `integration/*` or `main`, even if it looks convenient. The orchestrator lands your branch after you finish. The only merge you make is a `feature/*` branch into your own `epic/*` branch. </important>
 - Do not open PRs
 - Do not close issues — that happens at merge time
 - <important> Do not write tests. Do not create test files or inline test modules. All test writing is handled exclusively by harness:test-agent. </important>
