@@ -71,6 +71,8 @@ Run it from a local clone of this repo (agents need one too). `--project` defaul
 
 To update, pull the harness clone and run `update`. A file you edited locally is skipped with a message (the checklist shows a diff and asks); `--force` overwrites it. Commit the result.
 
+Install and update conventions on the main checkout before running workstreams: sub-agents working in `.claude/worktrees/` get the main checkout's rules. For the same reason, a rule's `paths:` patterns must start with `**/` (e.g. `**/*.rs`) so they also match files inside worktrees. A convention removed from the harness shows as `removed upstream`; `update` leaves it alone, `remove <name>` deletes it.
+
 ## tracker-github
 
 Requires:

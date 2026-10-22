@@ -40,6 +40,10 @@ Statuses: not installed, installed, update available, locally modified,
 removed upstream (installed, but gone from the harness: remove it).
 Rules go to .claude/rules/conventions/, skills to .claude/skills/<name>/.
 Commit those and .claude/conventions.lock afterwards.
+
+Run on the main checkout before starting workstreams: sub-agents in
+.claude/worktrees/ get the main checkout's rules. For the same reason a rule's
+paths: patterns must start with **/ so they match files in worktrees too.
 EOF
 }
 
