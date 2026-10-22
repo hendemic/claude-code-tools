@@ -4,10 +4,26 @@ A personal Claude Code dev-process harness, packaged as a plugin marketplace nam
 
 | Plugin | What it provides |
 | --- | --- |
-| `harness` | Skills `development`, `git-flow`, `merge-handler`, `ticket-handler`; commands `/harness:issue`, `/harness:workstream`; agents `harness:dev-agent-sm`, `harness:dev-agent-lg`, `harness:test-agent`; a SessionStart hook that loads the version-control rules |
+| `harness` | Skills `development`, `git-flow`, `merge-handler`; commands `/harness:issue`, `/harness:workstream`; agents `harness:dev-agent-sm`, `harness:dev-agent-lg`, `harness:test-agent`; the `harness-tracker-status` command; a SessionStart hook that loads the version-control rules and points the session at the tracker check |
+| `tracker-github` | Optional issue-tracking module for GitHub Issues + a GitHub Project: the `harness-tracker` command and the `tracker-github:ticket-handler` skill |
 | `harness-rust` | Skill `rust-conventions` for writing, testing, and reviewing Rust |
 
-Everything is namespaced by plugin, e.g. `/harness:workstream 0.6.9` or `harness:ticket-handler`.
+Everything is namespaced by plugin, e.g. `/harness:workstream 0.6.9` or `tracker-github:ticket-handler`.
+
+## Modules: issue tracking is optional
+
+`harness` runs the whole dev process on its own: worktree isolation, sub-agents, per-workstream integration branches, merge-handler, and the release flow. Issue tracking plugs in as a module.
+
+- **No tracker** (enable only `harness`): `/harness:workstream` takes a free-text request or a plan file, splits it into work items, and presents the plan for approval. You agree a slug that names the integration branch (`integration/<slug>`). Sub-agents get each work item's text in their prompt and report their summaries back instead of commenting on issues. Status updates, issue comments, and milestone closing are skipped; at release time merge-handler asks you for the version.
+- **With a tracker** (also enable a tracker module, e.g. `tracker-github@hendemic-harness`): `/harness:workstream 0.6.9` resolves a milestone (or a list of issue refs) into work items, sizes drive the agent tier, statuses move `in-progress → staged → complete`, agents log to the issues, and the release closes the milestone.
+
+A tracker module is a plugin that ships a `bin/harness-tracker` command implementing [the tracker contract](plugins/harness/contracts/tracker.md). Claude Code puts every enabled plugin's `bin/` on `PATH`, so core skills just call `harness-tracker`. Run `harness-tracker-status` to see which mode a session is in; it warns if more than one enabled plugin ships `harness-tracker` (only the first on `PATH` would run). Enable at most one tracker module per project.
+
+### tracker-github setup
+
+- `gh` authenticated with the `project` scope (`gh auth refresh -s project`), and `jq` installed.
+- The repository linked to exactly one open GitHub Project with single-select fields `Status` (`Backlog`, `Ready`, `In Progress`, `Staged`, `Complete`, `Abandoned`) and `Size` (`Small`, `Medium`, `Large`). Epics are issues labelled `epic` with GitHub sub-issues; test work is labelled `test`.
+- If several projects are linked, or the fields are named differently, set `TRACKER_GITHUB_PROJECT_ID` (and optionally `TRACKER_GITHUB_STATUS_FIELD_ID`, `TRACKER_GITHUB_SIZE_FIELD_ID`) in the `env` block of `.claude/settings.json`. `harness-tracker project` shows what it found.
 
 ## Add to a project
 
@@ -32,10 +48,13 @@ Then enable the plugins in `.claude/settings.json`. The finished file looks like
   },
   "enabledPlugins": {
     "harness@hendemic-harness": true,
+    "tracker-github@hendemic-harness": true,
     "harness-rust@hendemic-harness": true
   }
 }
 ```
+
+Leave out `tracker-github@hendemic-harness` to run without an issue tracker.
 
 Commit `.claude/settings.json`. Once a collaborator trusts the folder, Claude Code fetches the marketplace and loads the plugins; no separate install step is needed.
 
@@ -47,7 +66,7 @@ The harness is project-agnostic. Anything project-specific lives in the project'
 
 | Section | Contents | Used by | If absent |
 | --- | --- | --- | --- |
-| `## Harness: escalation signals` | Paths, keywords, or kinds of work that always go to `harness:dev-agent-lg`, regardless of Size | `/harness:workstream` | No escalation; agents are picked by Size and labels only |
+| `## Harness: escalation signals` | Paths, keywords, or kinds of work that always go to `harness:dev-agent-lg`, regardless of Size | `/harness:workstream` | No escalation; agents are picked by Size (or, without a tracker, the orchestrator's judgment) and labels only |
 | `## Harness: quality gates` | Typecheck, format, lint, and test commands; which are required; prerequisites (services that must be running) | `harness:test-agent`, `harness:merge-handler` | test-agent uses the project's standard commands and says which it ran; merge-handler asks the user before the milestone-close gate |
 | `## Harness: testing layout` | Where tests live per layer, shared helpers, frameworks, unit vs integration per layer | `harness:test-agent` | Infer from existing tests; ask before inventing a layout |
 | `## Harness: user-only checks` | Checks agents must not run; the user runs them before a release | `harness:test-agent`, `harness:merge-handler` | No release reminder; nothing is off limits beyond the usual rules |
@@ -90,7 +109,7 @@ A minimal example:
 Load a plugin straight from a checkout for one session, without installing it:
 
 ```sh
-claude --plugin-dir ./plugins/harness --plugin-dir ./plugins/harness-rust
+claude --plugin-dir ./plugins/harness --plugin-dir ./plugins/tracker-github --plugin-dir ./plugins/harness-rust
 ```
 
 Check manifests and components before committing:
@@ -98,6 +117,7 @@ Check manifests and components before committing:
 ```sh
 claude plugin validate .
 claude plugin validate ./plugins/harness
+claude plugin validate ./plugins/tracker-github
 claude plugin validate ./plugins/harness-rust
 ```
 
