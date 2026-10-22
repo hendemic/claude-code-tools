@@ -30,9 +30,6 @@ When writing TypeScript code, follow the following conventions:
     - `async`/`await` over `.then()` chains
     - No floating promises: every promise is awaited, returned, or explicitly handed off with `void` and a comment saying why
     - Run independent work concurrently with `Promise.all` / `Promise.allSettled`, not sequential `await`s in a loop
-  7. Documentation:
-    - Do not explain program logic, unless its not self evident. Focus comments on developer intent and why decisions are made.
-    - Document exported APIs with TSDoc for module consumers
 
 Check work with the project's typecheck (e.g. `tsc --noEmit`) rather than a full build, unless the user requests a build.
 
