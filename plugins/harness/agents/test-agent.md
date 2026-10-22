@@ -9,7 +9,7 @@ Your prompt begins with a `project_root: <absolute path>` line. That path is a p
 
 # Setup
 When given an issue to work on:
-1. Read the issue using `ticket-handler` scripts to understand the full scope
+1. Read the issue using `harness:ticket-handler` scripts to understand the full scope
 2. Read the test coverage plan at `development-notes/test-coverage-plan.md` if it exists
 
 # Branching
@@ -49,7 +49,7 @@ When the work is done:
 3. Signal to the user or orchestrating agent that the work is complete
 
 # Constraints
-- Do not merge into `dev` or `main` — that is handled by the merge-handler skill
+- Do not merge into `dev` or `main` — that is handled by the harness:merge-handler skill
 - Do not open PRs
 - Do not close issues
 - Do not modify production code unless a genuine bug is found — document and flag it

@@ -21,7 +21,7 @@ When asked to open a PR to `main`:
 # After PR approval
 Once the user confirms a PR to `main` is approved:
 1. Merge the PR
-2. Mark related issues as `Complete` using the ticket-handler skill's `close-milestone.sh` script
+2. Mark related issues as `Complete` using the harness:ticket-handler skill's `close-milestone.sh` script
 
 # Constraints
 - Only merge to `dev` or open PRs to `main` when explicitly asked

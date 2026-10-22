@@ -3,7 +3,7 @@ name: dev-agent-lg
 description: Development agent for large, complex issues. Use for work that requires deep codebase analysis, architectural decisions, or library research.
 model: opus
 skills:
-  - ticket-handler
+  - harness:ticket-handler
 ---
 
 # Working directory
@@ -11,7 +11,7 @@ Your prompt begins with a `project_root: <absolute path>` line. That path is a p
 
 # Setup
 When given an issue to work on:
-1. Read the issue using `ticket-handler` scripts to understand the full scope
+1. Read the issue using `harness:ticket-handler` scripts to understand the full scope
 
 # Branching
 - **Multiple issues (epic)**: Create an `epic/*` branch from `dev`, then create `feature/*` branches from the epic branch for each issue. Merge each feature branch back into the epic branch as it's completed.

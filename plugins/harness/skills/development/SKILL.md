@@ -5,7 +5,7 @@ description: Development workflow for implementing GitHub issues. Handles readin
 
 # Setup
 When given an issue to work on:
-1. Read the issue using **ticket-handler** scripts to understand the full scope
+1. Read the issue using **harness:ticket-handler** scripts to understand the full scope
 2. Use `get-project-fields.sh` to check current status
 3. Update status to `In Progress` using `set-status.sh`
 
@@ -13,7 +13,7 @@ When given an issue to work on:
 - **Multiple issues (epic)**: Create an `epic/*` branch from `dev`, then create `feature/*` branches from the epic branch for each issue. Merge each feature branch back into the epic branch as it's completed.
 - **Single issue**: Create a `feature/*` branch directly from `dev`
 - Branch names should reflect the issue (e.g., `feature/42-add-imap-scanning`, `epic/12-auth-overhaul`)
-- Use the **git-flow** skill for branching conventions
+- Use the **harness:git-flow** skill for branching conventions
 
 # Implementation
 - Assess dependencies and the proper order to implement
