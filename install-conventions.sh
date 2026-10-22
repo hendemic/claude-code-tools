@@ -36,7 +36,8 @@ Options:
   --force        Overwrite or delete locally modified files without asking
   -h, --help     Show this help
 
-Statuses: not installed, installed, update available, locally modified.
+Statuses: not installed, installed, update available, locally modified,
+removed upstream (installed, but gone from the harness: remove it).
 Rules go to .claude/rules/conventions/, skills to .claude/skills/<name>/.
 Commit those and .claude/conventions.lock afterwards.
 EOF
@@ -96,9 +97,15 @@ all_conventions() {
     done
 }
 
-conf_get() {  # <name> <key>
-    sed -n "s/^$2=//p" "$LIB/$1/convention.conf" | head -n1
+conf_get() {  # <name> <key>; orphans have no conf (kind comes from the lock)
+    if [ -f "$LIB/$1/convention.conf" ]; then
+        sed -n "s/^$2=//p" "$LIB/$1/convention.conf" | head -n1
+    elif [ "$2" = kind ]; then
+        lock_entries "$1" | awk '{ print $2; exit }'
+    fi
 }
+
+is_known() { [ -f "$LIB/$1/convention.conf" ]; }
 
 source_files() {  # <name> -> paths relative to the convention dir
     (cd "$LIB/$1" && find . -type f ! -name convention.conf | sed 's|^\./||' | sort)
@@ -140,11 +147,19 @@ lock_set() {  # <name> <kind> <dest> <sha>
 
 is_installed() { [ -n "$(lock_entries "$1")" ]; }
 
+orphans() {  # installed conventions no longer in the library
+    local name
+    for name in $(lock_entries | awk '{ print $1 }' | sort -u); do
+        is_known "$name" || echo "$name"
+    done
+}
+
 # --- status ------------------------------------------------------------------
 
 conv_status() {  # <name>
     local name="$1" kind rel dest recorded update=0 modified=0
     is_installed "$name" || { echo "not installed"; return; }
+    is_known "$name" || { echo "removed upstream"; return; }
     kind="$(conf_get "$name" kind)"
 
     local expected=" "
@@ -319,9 +334,11 @@ summary() {
     if [ -f "$LOCK" ] && [ -z "$(lock_entries)" ]; then rm -f "$LOCK"; fi
 }
 
-check_names() {  # <names...> -> exit 1 on unknown names
+check_names() {  # <0|1 accept orphans> <names...> -> exit 1 on unknown names
     local name bad=0 known
     known=" $(all_conventions | tr '\n' ' ') "
+    [ "$1" = 1 ] && known+="$(orphans | tr '\n' ' ') "
+    shift
     for name in "$@"; do
         case "$known" in *" $name "*) ;; *) echo "Unknown convention: $name" >&2; bad=1 ;; esac
     done
@@ -363,7 +380,7 @@ choose_box() {  # <tool> <names...>
 
 run_tui() {
     local names chosen name status to_add=() to_remove=() to_update=()
-    mapfile -t names < <(all_conventions)
+    mapfile -t names < <(all_conventions; orphans)
     [ ${#names[@]} -gt 0 ] || { echo "No conventions in $LIB"; exit 0; }
 
     if command -v whiptail >/dev/null 2>&1; then ASK=whiptail
@@ -411,21 +428,22 @@ case "$COMMAND" in
     "")
         if [ -t 0 ] && [ -t 1 ]; then run_tui; else usage >&2; exit 2; fi ;;
     list)
-        mapfile -t all < <(all_conventions)
+        mapfile -t all < <(all_conventions; orphans)
         print_table "${all[@]}" ;;
     status)
         installed=()
         for name in $(all_conventions); do is_installed "$name" && installed+=("$name"); done
+        mapfile -t -O ${#installed[@]} installed < <(orphans)
         if [ ${#installed[@]} -eq 0 ]; then echo "No conventions installed in $PROJECT."
         else print_table "${installed[@]}"; fi ;;
     add)
         [ ${#NAMES[@]} -gt 0 ] || { echo "add: name at least one convention" >&2; exit 2; }
-        check_names "${NAMES[@]}"
+        check_names 0 "${NAMES[@]}"
         for name in "${NAMES[@]}"; do install_conv "$name"; done
         summary ;;
     remove)
         [ ${#NAMES[@]} -gt 0 ] || { echo "remove: name at least one convention" >&2; exit 2; }
-        check_names "${NAMES[@]}"
+        check_names 1 "${NAMES[@]}"
         for name in "${NAMES[@]}"; do remove_conv "$name"; done
         summary ;;
     update)
@@ -433,10 +451,14 @@ case "$COMMAND" in
         if [ ${#NAMES[@]} -eq 0 ]; then
             for name in $(all_conventions); do is_installed "$name" && NAMES+=("$name"); done
         else
-            check_names "${NAMES[@]}"
+            check_names 1 "${NAMES[@]}"
         fi
+        for name in $(orphans); do
+            echo "$name: removed upstream, not updated (run: remove $name)"
+        done
         for name in "${NAMES[@]}"; do
-            if is_installed "$name"; then install_conv "$name"
+            if ! is_known "$name"; then continue  # orphan, reported above
+            elif is_installed "$name"; then install_conv "$name"
             else echo "$name is not installed (use add)" >&2; rc=1
             fi
         done
