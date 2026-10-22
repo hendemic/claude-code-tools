@@ -1,0 +1,19 @@
+{
+  "name": "hendemic-harness",
+  "owner": {
+    "name": "Michael Henderson"
+  },
+  "description": "Personal Claude Code dev-process harness: skills, agents, commands, and rules",
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./plugins/harness",
+      "description": "Dev process harness: ticket handling, git flow, merge/release, workstream orchestration, and dev/test subagents"
+    },
+    {
+      "name": "harness-rust",
+      "source": "./plugins/harness-rust",
+      "description": "Rust coding conventions for the dev process harness"
+    }
+  ]
+}
