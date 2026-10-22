@@ -5,6 +5,8 @@ description: Merge and release workflow. Handles merging work branches into inte
 
 Project-specific inputs come from the project's `CLAUDE.md` (see "Project contract" in the harness README): `## Harness: quality gates`, `## Harness: lockfile`, `## Harness: user-only checks`, and `## Harness: conflict hotspots`. Each section below says what to do when one is missing.
 
+Issue tracking is optional. Before any tracker step, run `harness-tracker-status` once with the Bash tool. With a tracker, the tracker steps below use `harness-tracker` (see the harness tracker contract, `contracts/tracker.md` in the harness plugin); without one, skip them — everything else, including the release flow, works the same. Without a tracker, `<milestone>` in branch and worktree names is the slug agreed in `/harness:workstream`.
+
 Every step here is user-initiated. Only merge, open release PRs, merge release PRs or push tags when explicitly asked.
 
 # Common rules for every merge
@@ -63,6 +65,7 @@ Each PR from `dev` to `main` ships as a version, and each version gets an annota
 ## Picking the version
 
 - **The PR closes out a numbered milestone** (e.g. milestone `1.4.0`): the version is that milestone's number.
+- **No tracker:** there is no milestone to read a number from. Propose the next version from the latest release (below) and the size of the change, and let the user decide.
 - **Otherwise** (a fix batch, or leftovers from an already-shipped milestone): use the next patch after the latest release. Find the latest release from both `git tag --sort=-v:refname` and the titles of recent merged PRs into `main`, because older releases may be untagged.
 - **Always confirm the version with the user** before opening the PR.
 - **Check the tag is free:** `git tag -l vX.Y.Z` locally and `git ls-remote --tags origin vX.Y.Z` on the remote.
@@ -76,8 +79,8 @@ Only when the user asks.
 3. Open the PR `dev` → `main`:
    - **Title:** `X.Y.Z: <short theme>`
    - **Body:**
-     - `## X.Y.Z: <theme>`, naming the release version and the milestone it closes
-     - `### What's in it`: one bullet per issue or change, with issue numbers
+     - `## X.Y.Z: <theme>`, naming the release version and the milestone (or slug) it closes
+     - `### What's in it`: one bullet per work item or change, with tracker refs when there is a tracker
      - `### Verification`: what actually ran and passed (merge gates, test counts, build, user-only checks if the user reported them)
      - `### Not verified`: anything left for the user, such as manual device checks or visual review
      - No Claude/Anthropic attribution line (see Constraints).
@@ -96,17 +99,16 @@ Do these in order, and report each result:
      ```
      The message file's first line is `Release X.Y.Z`, then a blank line, then a one-line theme, then `- ` bullets summarising the release.
    - `git push origin vX.Y.Z`. Push only that tag, never `--tags`.
-3. **Close the milestone's issues** with the harness:ticket-handler script, dry run first:
+3. **Tracker: close out the milestone.** Skip this step without a tracker. Dry run first and show the user the list:
    ```
-   ${CLAUDE_PLUGIN_ROOT}/skills/ticket-handler/scripts/close-milestone.sh "<milestone title>" --dry-run
+   harness-tracker close-milestone "<milestone>" --dry-run
    ```
-   Show the user the list before running it without `--dry-run`. If an open issue in the milestone didn't actually ship, move it to another milestone instead of closing it.
-4. **Mark the issues `Complete`.** `close-milestone.sh` closes issues on GitHub but does not touch the project board, so move every shipped issue (including ones already closed during the milestone) to `Complete` with `set-status.sh`.
-5. **Close the milestone itself.** The script only closes its issues:
+   If an open item in the milestone didn't actually ship, move it to another milestone in the tracker before going on. Then run it for real:
    ```
-   gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=closed
+   harness-tracker close-milestone "<milestone>"
    ```
-6. **GitHub Release:** only if the user asks for one (`gh release create vX.Y.Z --verify-tag --notes-file <file>`). The tag is the default deliverable.
+   This closes the milestone's open items, moves all of its items to `complete`, and closes the milestone itself. If it exits `3` (unsupported by the tracker module), tell the user the tracker bookkeeping is theirs to do.
+4. **GitHub Release:** only if the user asks for one (`gh release create vX.Y.Z --verify-tag --notes-file <file>`). The tag is the default deliverable.
 
 # Constraints
 

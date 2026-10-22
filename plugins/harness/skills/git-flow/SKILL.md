@@ -10,7 +10,7 @@ Branch types and naming are defined in the harness version-control rule (loaded 
 # Workflow
 
 - `dev` is the central development branch. Work branches from `dev` (or, inside a milestone workstream, from that milestone's integration branch — see below).
-- Most issues are one branch each, named after the issue and work scope (e.g. `feature/42-csv-export`, `bug/57-login-redirect`).
+- Most work items are one branch each, named after the item and work scope (e.g. `feature/42-csv-export`, `bug/57-login-redirect`; without an issue tracker, drop the ref: `feature/csv-export`).
 - For epics: branch `epic/*` from the base, then branch `feature/*` off the epic. Feature branches merge back into the epic; the epic merges onward once its scope is done.
 - Atomic commits as work progresses. Commit messages describe intent, not just the diff.
 - Only the **harness:merge-handler** skill merges into `dev` or `integration/*`, opens release PRs to `main`, and tags releases. Don't merge into any of them directly outside that flow.
@@ -21,6 +21,8 @@ Sub-agents spawned by `/harness:workstream` each get their own worktree, created
 
 - `.claude/worktrees/<milestone>/<workstream-id>/` when the workstream is milestone-scoped
 - `.claude/worktrees/<workstream-id>/` for ad-hoc issue-list workstreams
+
+Without an issue tracker there are no milestones: `/harness:workstream` agrees a slug with the user, and the slug takes the milestone's place in every path and branch name here (`integration/<slug>`, `.claude/worktrees/<slug>/...`).
 
 The milestone prefix lets two parallel orchestrator sessions work on different milestones without colliding. Worktrees are created with `git worktree add --detach <path> <base>`, so the agent starts on a detached HEAD at the base and creates its own branch from there.
 
