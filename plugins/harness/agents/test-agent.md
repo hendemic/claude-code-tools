@@ -29,6 +29,7 @@ Read the work item for what to cover. Read the acceptance criteria and the relev
 4. The relevant contracts the AC refers to (interfaces, ports, traits, public types)
 5. The implementation files referenced in the AC — only to confirm names and module paths
 6. Existing tests in the same layer — match their conventions
+7. Any language conventions in `.claude/rules/` — their Testing sections apply, after the project's `## Harness: testing layout`
 
 # Tests are written in tandem with implementation
 
