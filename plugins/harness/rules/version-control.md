@@ -10,6 +10,7 @@
   - `bug/*` — Bug fixes.
   - `hotfix/*` — Urgent fixes. Can PR directly to main, bypassing dev.
   - `documentation/*` — README, LICENSE, agent instructions, and other docs.
+  - `integration/*` — Staging branch where several work branches batch before landing on dev: one-shot (`integration/<date-or-topic>`) or per-milestone (`integration/<milestone>`). See the harness:git-flow skill.
 - Never use "master". "main" is the modern convention to use.
 - Do not merge into main, or open PRs into main. The user will handle all git operations related to main unless you're otherwise told.
 - <important> Never attribute commits or PRs to Claude or Anthropic. </important>
