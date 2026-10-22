@@ -6,10 +6,12 @@ set -euo pipefail
 #   close-milestone.sh "0.0.2"        # pattern match on milestone title
 #   close-milestone.sh --id 3         # by milestone ID
 #   close-milestone.sh "0.0.2" --dry-run  # preview without closing
+#   close-milestone.sh "0.0.2" --skip 12,14   # leave these issues open
 
 DRY_RUN=false
 MILESTONE=""
 BY_ID=false
+SKIP=","
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -21,6 +23,10 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=true
             shift
+            ;;
+        --skip)
+            SKIP=",$2,"
+            shift 2
             ;;
         *)
             MILESTONE="$1"
@@ -64,6 +70,11 @@ count=$(echo "$issue_numbers" | wc -l)
 echo "Found $count open issue(s)"
 
 for num in $issue_numbers; do
+    if [[ "$SKIP" == *",$num,"* ]]; then
+        echo "  Skipping #$num (left open)"
+        count=$((count - 1))
+        continue
+    fi
     if [[ "$DRY_RUN" == true ]]; then
         echo "  [dry-run] Would close #$num"
     else

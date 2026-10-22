@@ -107,7 +107,7 @@ Do these in order, and report each result:
    ```
    harness-tracker close-milestone "<milestone>"
    ```
-   This closes the milestone's open items, moves all of its items to `complete`, and closes the milestone itself. If it exits `3` (unsupported by the tracker module), tell the user the tracker bookkeeping is theirs to do.
+   This closes the milestone's open items, moves all of its items to `complete`, and closes the milestone itself. Epic statuses are the tracker's job: it rolls them up from their sub-issues, and leaves open any epic with unfinished sub-issues in another milestone (the dry run lists these). If it exits `3` (unsupported by the tracker module), tell the user the tracker bookkeeping is theirs to do.
 4. **GitHub Release:** only if the user asks for one (`gh release create vX.Y.Z --verify-tag --notes-file <file>`). The tag is the default deliverable.
 
 # Constraints

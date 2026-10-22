@@ -11,14 +11,16 @@ This plugin ships `harness-tracker` (on `PATH` while the plugin is enabled). It 
 | `harness-tracker resolve <milestone>` / `resolve --items 42 43` | Open work items in a milestone or issue list, epics expanded into sub-issues (TSV) |
 | `harness-tracker read 42 43` | Full issue text |
 | `harness-tracker fields 42 43` | Status, Size, and labels (TSV) |
-| `harness-tracker set-status 42 43 <status>` | Move issues on the project board |
+| `harness-tracker set-status 42 43 <status> [--no-rollup] [--dry-run]` | Move issues on the project board; their parent epics roll up automatically |
 | `harness-tracker set-size 42 <small\|medium\|large>` | Set the Size field |
 | `harness-tracker comment 42 < body.md` | Comment on an issue (body from stdin) |
 | `harness-tracker create --title "..." [--body-file f\|-] [--label feature] [--milestone "..."] [--status ready] [--size small]` | Create an issue, add it to the project, set Status and Size; prints the new number first |
 | `harness-tracker list [--all] [--milestone M] [--label L]` | List issues |
-| `harness-tracker close-milestone <milestone> [--dry-run]` | Close the milestone's open issues, mark them all Complete, close the milestone |
+| `harness-tracker close-milestone <milestone> [--dry-run]` | Close the milestone's open issues, mark them all Complete, close the milestone; epics with unfinished sub-issues outside the milestone are skipped |
 
 Statuses on the command line are neutral (`backlog`, `ready`, `in-progress`, `staged`, `complete`, `abandoned`); the command maps them to the project's Status options below. Sizes are `small`, `medium`, `large`.
+
+Epics roll up from their sub-issues: after `set-status` (and `close-milestone`), each changed issue's parent is recomputed from all its sub-issues (all complete → complete; all staged or complete → staged; any started → in-progress; abandoned sub-issues ignored), moved forward only, never touched when abandoned, and rolled up further if it has a parent itself. The command prints `rolled up #N → <status>` for each. Don't set epic statuses by hand.
 
 ## Setup
 - `gh` authenticated with the `project` scope (`gh auth refresh -s project`), and `jq` installed.

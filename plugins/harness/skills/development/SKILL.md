@@ -40,7 +40,7 @@ Tracker: post it on the item with `harness-tracker comment <ref>` (body on stdin
 
 # Completion
 1. Commit all remaining changes to the feature branch. DO NOT merge to `dev`, `integration/*` or `main`.
-2. Tracker: `harness-tracker set-status <ref>... staged`. Stage the epic as well, if it's complete.
+2. Tracker: `harness-tracker set-status <ref>... staged`. Don't set the epic's status; the tracker rolls it up from its sub-issues.
 
 # Constraints
 - <important> Do not merge into `dev`, `integration/*` or `main` </important>

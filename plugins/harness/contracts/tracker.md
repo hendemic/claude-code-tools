@@ -17,7 +17,7 @@ Claude Code adds plugin `bin/` directories to `PATH` for the Bash tool but not f
 ## Concepts
 
 - **Work item**: one unit of work, identified by a **ref**: an opaque token with no whitespace (for GitHub, an issue number; a leading `#` is accepted). Core never parses refs; it only passes them back.
-- **Epic**: a work item that groups others. It is not itself a work item; `resolve` expands it into its children.
+- **Epic**: a work item that groups others. It is not itself a work item; `resolve` expands it into its children, and its status follows theirs (see [Parent/child items](#parentchild-items)).
 - **Milestone**: a named batch of work items that ships as one release. Core uses the milestone name for the integration branch (`integration/<milestone>`) and the release version.
 - **Labels**: free-form tags. Core gives meaning to two: `test` (route to `harness:test-agent`) and `epic` (expanded by `resolve`). A module maps its own concepts onto these names.
 
@@ -86,9 +86,9 @@ ID	STATUS	SIZE	LABELS
 
 `STATUS` uses the status vocabulary, `SIZE` the size vocabulary; either is `-` if unset or unknown.
 
-### `set-status <ref>... <status>`
+### `set-status <ref>... <status> [--no-rollup] [--dry-run]`
 
-Moves every listed item to `<status>` (the last argument). Prints one confirmation line per item.
+Moves every listed item to `<status>` (the last argument). Prints one confirmation line per item, then one line per parent it rolled up (see [Parent/child items](#parentchild-items)). `--no-rollup` skips the rollup; `--dry-run` prints what would change, items and parents, and changes nothing. Both flags are optional for modules without hierarchy.
 
 ### `comment <ref>`
 
@@ -100,7 +100,21 @@ Creates a work item. The first line of stdout is the new item's ref; anything af
 
 ### `close-milestone <milestone> [--dry-run]`
 
-Release bookkeeping, run by `harness:merge-handler` after a release is tagged: closes the milestone's open items, moves all of its items to `complete`, and closes the milestone itself. `--dry-run` prints what would change and changes nothing; core always runs it first and shows the user.
+Release bookkeeping, run by `harness:merge-handler` after a release is tagged: closes the milestone's open items, moves all of its items to `complete`, and closes the milestone itself. An epic whose children are not all in the milestone or already `complete` (or `abandoned`) is left open and not completed, and the output says so. Parents outside the milestone roll up as with `set-status`. `--dry-run` prints what would change and changes nothing; core always runs it first and shows the user.
+
+## Parent/child items
+
+A tracker that supports hierarchy (epics with children, GitHub sub-issues, and so on) MUST roll status up to parents whenever it changes an item's status. Core never sets an epic's status itself; it only moves the work items `resolve` returns.
+
+For each distinct parent of the changed items, the module recomputes the parent's status from all of its children's current statuses:
+
+- every child `complete` → parent `complete`
+- otherwise every child `staged` or `complete` → parent `staged`
+- otherwise any child `in-progress`, `staged` or `complete` → parent `in-progress`
+
+`abandoned` children are ignored; if every child is abandoned, the parent is left alone. A parent only ever moves forward (`backlog` < `ready` < `in-progress` < `staged` < `complete`), and an `abandoned` parent is never touched. When a parent moves and has a parent of its own, that one is rolled up too (guarding against cycles). Each rollup prints a line such as `rolled up #12 → staged` on stdout.
+
+Trackers without hierarchy ignore this section.
 
 ## Extras
 
