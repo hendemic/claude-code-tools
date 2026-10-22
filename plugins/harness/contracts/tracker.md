@@ -100,7 +100,7 @@ Creates a work item. The first line of stdout is the new item's ref; anything af
 
 ### `close-milestone <milestone> [--dry-run]`
 
-Release bookkeeping, run by `harness:merge-handler` after a release is tagged: closes the milestone's open items, moves all of its items to `complete`, and closes the milestone itself. An epic whose children are not all in the milestone or already `complete` (or `abandoned`) is left open and not completed, and the output says so. Parents outside the milestone roll up as with `set-status`. `--dry-run` prints what would change and changes nothing; core always runs it first and shows the user.
+Release bookkeeping, run by `harness:merge-handler` after a release is tagged: closes the milestone's open items, moves all of its items to `complete` (items already `abandoned` keep that status), and closes the milestone itself. An epic whose children are not all in the milestone or already `complete` (or `abandoned`) is left open and not completed, and the output says so. Parents outside the milestone roll up as with `set-status`. `--dry-run` prints what would change and changes nothing; core always runs it first and shows the user.
 
 ## Parent/child items
 
