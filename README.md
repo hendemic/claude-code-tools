@@ -42,7 +42,7 @@ Then enable the plugins in `.claude/settings.json`. The finished file looks like
       "source": {
         "source": "github",
         "repo": "hendemic/claude-code-tools",
-        "ref": "v0.2.0"
+        "ref": "v0.0.1"
       }
     }
   },
