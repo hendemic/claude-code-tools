@@ -1,3 +1,8 @@
+---
+description: Plan and run parallel dev/test subagent workstreams for a milestone or set of issues
+argument-hint: <milestone | issue numbers>
+---
+
 Execute a workstream for the following milestone or issues: $ARGUMENTS
 
 Arguments can be:
@@ -6,7 +11,7 @@ Arguments can be:
 
 ## Step 1: Resolve inputs to a flat list of work items
 
-- Use the **ticket-handler** skill to resolve the input:
+- Use the **harness:ticket-handler** skill to resolve the input:
   - **Milestone**: use `list-issues.sh --milestone` to get all issues, then `--all` variant to include closed.
   - **Issue numbers**: use `list-sub-issues.sh` to expand epics into their sub-issues.
 - For each issue that has the `epic` label, expand it into its sub-issues. The epic itself is not a work item — only its sub-issues are.
@@ -27,9 +32,9 @@ Group the actionable issues into workstreams based on these principles:
 ## Step 3: Assign agent types
 
 For each workstream, assign an agent type based on the Size field and labels of its issues:
-- **Label `test`**: `test-agent` (regardless of size)
-- **Small or Medium**: `dev-agent-sm`
-- **Large**: `dev-agent-lg`
+- **Label `test`**: `harness:test-agent` (regardless of size)
+- **Small or Medium**: `harness:dev-agent-sm`
+- **Large**: `harness:dev-agent-lg`
 - Mixed sizes within a workstream: use the larger agent type
 
 ## Step 4: Present plan and get approval
@@ -60,11 +65,11 @@ For each workstream:
    - Worktrees live inside the project at `.claude/worktrees/<workstream-id>` (relative to the repo root). Add `.claude/worktrees/` to `.gitignore` if it isn't already.
    - Run: `git worktree add <repo-root>/.claude/worktrees/<workstream-id> dev` using the absolute path.
 
-3. **Spawn the sub-agent** via the Agent tool. **MUST pass `run_in_background: true`** (background agent). **Do NOT pass `isolation: "worktree"`**. The prompt MUST begin with a `project_root:` line giving the absolute worktree path, followed by the `/issue` invocation. Example:
+3. **Spawn the sub-agent** via the Agent tool. **MUST pass `run_in_background: true`** (background agent). **Do NOT pass `isolation: "worktree"`**. The prompt MUST begin with a `project_root:` line giving the absolute worktree path, followed by the `/harness:issue` invocation. Example:
    ```
    project_root: /home/user/code/meal-planner-app/.claude/worktrees/42
 
-   /issue 22, 23, 38
+   /harness:issue 22, 23, 38
    ```
    The agent will cd to `project_root` and do all work there.
 
@@ -84,7 +89,7 @@ Do NOT merge branches during this step. Sub-agents write code only — merging h
 After **all** sub-agents have completed, merge their branches into `dev` and clean up the worktrees:
 
 1. For each workstream, push the agent's branch from inside its worktree if it isn't already pushed: `git -C <worktree-path> push -u origin <branch>`.
-2. Merge each completed branch into `dev` per the **merge-handler** skill. Resolve conflicts, push, and delete the branches (local and remote).
+2. Merge each completed branch into `dev` per the **harness:merge-handler** skill. Resolve conflicts, push, and delete the branches (local and remote).
 3. Remove each worktree once its branch is merged: `git worktree remove <absolute-worktree-path>`. If the worktree has uncommitted state, investigate before forcing — do not pass `--force` reflexively.
 4. Review changes across workstreams for consistency and integration. Fix any cross-workstream issues (e.g., missing struct fields, changed function signatures).
 5. **Set status to Staged**: use `set-status.sh` to move all merged issues to "Staged".

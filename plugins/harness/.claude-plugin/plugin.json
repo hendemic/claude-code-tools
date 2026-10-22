@@ -1,0 +1,9 @@
+{
+  "name": "harness",
+  "version": "0.1.0",
+  "description": "Dev process harness: ticket handling, git flow, merge/release, workstream orchestration, and dev/test subagents",
+  "author": {
+    "name": "Michael Henderson"
+  },
+  "repository": "https://github.com/hendemic/claude-code-tools"
+}

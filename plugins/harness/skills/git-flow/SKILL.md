@@ -11,12 +11,12 @@ Follow branch naming and conventions as defined in the project rules (version-co
 - `feature/*` branches are for individual issues or small changes, branched from `dev`.
 - `epic/*` branches group related features. Create from `dev`, then branch `feature/*` off the epic.
 - Feature branches merge back into their parent (`epic/*` or `dev` depending on context).
-- Only the merge-handler skill handles merging into `dev` and creating PRs to `main`.
+- Only the harness:merge-handler skill handles merging into `dev` and creating PRs to `main`.
 
 # Commit practices
 - Make atomic commits as progress is made on larger scopes of work
 - Commit messages should be concise and describe intent
 
 # What NOT to do
-- Do not merge into `dev` or `main` directly — use the merge-handler skill
-- Do not open PRs — use the merge-handler skill
+- Do not merge into `dev` or `main` directly — use the harness:merge-handler skill
+- Do not open PRs — use the harness:merge-handler skill
