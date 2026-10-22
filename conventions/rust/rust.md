@@ -1,7 +1,10 @@
 ---
-name: rust-conventions
-description: Rust coding conventions for error handling, Option/Result style, iterators, documentation, testing, and cargo usage. Use whenever writing, editing, or reviewing Rust code (.rs files, Cargo crates).
+paths:
+  - "**/*.rs"
+  - "**/Cargo.toml"
 ---
+
+# Rust conventions
 
 When writing Rust code, follow the following conventions:
   1. Error handling:
