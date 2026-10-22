@@ -1,3 +1,8 @@
+---
+name: rust-conventions
+description: Rust coding conventions for error handling, Option/Result style, iterators, documentation, and cargo usage. Use whenever writing, editing, or reviewing Rust code (.rs files, Cargo crates).
+---
+
 When writing Rust code, follow the following conventions:
   1. Error handling:
     - anyhow + .context() at app level, custom error types in domain code
