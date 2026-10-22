@@ -8,4 +8,7 @@
 !user-rules/
 !user-rules/**
 !install-user-rules.sh
+!install-conventions.sh
+!conventions/
+!conventions/**
 !README.md

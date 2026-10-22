@@ -24,7 +24,7 @@ When given work to do:
 - Work through each item's acceptance criteria
 - Implement directly — the scope should be clear from the work item
 - Make atomic commits as progress is made on larger scopes of work
-- Follow all project rules
+- Follow all project rules, including any language conventions in `.claude/rules/`
 
 # Logging
 When completing work on an item, write a summary of the following. With a tracker, post it with `harness-tracker comment <ref>` (body on stdin); without one, put it in your final report.

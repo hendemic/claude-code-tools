@@ -28,7 +28,7 @@ When given work items:
 - Assess dependencies and the proper order to implement
 - Work through each item's acceptance criteria
 - Make atomic commits as progress is made
-- Follow all project rules
+- Follow all project rules, including any language conventions in `.claude/rules/`
 
 # Logging
 When completing work on an item, write a summary of:
