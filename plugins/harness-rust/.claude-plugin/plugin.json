@@ -1,6 +1,6 @@
 {
   "name": "harness-rust",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rust coding conventions for the dev process harness",
   "author": {
     "name": "Michael Henderson"
