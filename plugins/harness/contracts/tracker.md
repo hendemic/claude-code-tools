@@ -34,7 +34,7 @@ Statuses are neutral, lowercase, hyphenated. The module maps them to its tracker
 | `complete` | Shipped in a release | yes |
 | `abandoned` | Won't be done | no |
 
-A module must accept the three statuses core writes. The others are optional.
+A module must accept the three statuses core writes. The others are optional. A tracker status with no neutral equivalent is reported as `other:<name>` (lowercase, hyphenated), e.g. `other:blocked`.
 
 ### Size vocabulary
 

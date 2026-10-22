@@ -10,6 +10,11 @@ set -euo pipefail
 #                                   open project linked to the repository is used.
 #   TRACKER_GITHUB_STATUS_FIELD_ID  Optional; defaults to the field named "Status".
 #   TRACKER_GITHUB_SIZE_FIELD_ID    Optional; defaults to the field named "Size".
+#   TRACKER_GITHUB_STATUS_MAP       Optional neutral=Option overrides, comma separated,
+#                                   e.g. "complete=Shipped,abandoned=Dropped". Without
+#                                   an override, the board's Status options are matched
+#                                   case-insensitively against built-in candidates
+#                                   (complete: Complete|Done|Closed, and so on).
 
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 SCRIPTS="$HERE/../skills/ticket-handler/scripts"
@@ -59,16 +64,73 @@ parse_refs() {
 joined_refs() { local IFS=,; echo "${REFS[*]}"; }
 
 # Neutral <-> GitHub Project vocabularies.
-status_to_gh() {
+# Status options differ per board, so the board's actual options (STATUS_OPTIONS,
+# one per line, loaded once per invocation) are matched against candidates.
+NEUTRAL_STATUSES=(backlog ready in-progress staged complete abandoned)
+status_candidates() {
     case "$1" in
-        backlog) echo "Backlog" ;;
+        backlog) echo "Backlog|Todo" ;;
         ready) echo "Ready" ;;
-        in-progress) echo "In Progress" ;;
-        staged) echo "Staged" ;;
-        complete) echo "Complete" ;;
-        abandoned) echo "Abandoned" ;;
-        *) usage_err "unknown status: $1" ;;
+        in-progress) echo "In Progress|Doing" ;;
+        staged) echo "Staged|In Review|Review" ;;
+        complete) echo "Complete|Done|Closed" ;;
+        abandoned) echo "Abandoned|Won't Do|Wontfix|Closed" ;;
+        *) return 1 ;;
     esac
+}
+# Override for a neutral status from TRACKER_GITHUB_STATUS_MAP, or nothing.
+status_override() {
+    local pair IFS=,
+    for pair in ${TRACKER_GITHUB_STATUS_MAP:-}; do
+        [[ "${pair%%=*}" == "$1" ]] && { echo "${pair#*=}"; return 0; }
+    done
+    return 0
+}
+STATUS_OPTIONS=""
+STATUS_OPTIONS_LOADED=false
+load_status_options() {
+    [[ "$STATUS_OPTIONS_LOADED" == true ]] && return 0
+    STATUS_OPTIONS_LOADED=true
+    [[ -n "${STATUS_FIELD_ID:-}" ]] || return 0
+    STATUS_OPTIONS=$(gh api graphql -f query='
+    query($id: ID!) {
+      node(id: $id) { ... on ProjectV2SingleSelectField { options { name } } }
+    }' -f id="$STATUS_FIELD_ID" --jq '.data.node.options[].name' 2>/dev/null) || STATUS_OPTIONS=""
+}
+# Case-insensitive exact match of $1 in the lines of STATUS_OPTIONS; prints the board's spelling.
+find_option() {
+    local opt want="${1,,}"
+    while IFS= read -r opt; do
+        [[ -n "$opt" && "${opt,,}" == "$want" ]] && { echo "$opt"; return 0; }
+    done <<< "$STATUS_OPTIONS"
+    return 1
+}
+# Neutral status -> the board's option name. Exit 3 when the board has no match.
+status_to_gh() {
+    local st="$1" cand opt IFS
+    status_candidates "$st" >/dev/null || usage_err "unknown status: $st"
+    cand=$(status_override "$st")
+    [[ -n "$cand" ]] || cand=$(status_candidates "$st")
+    IFS='|'
+    for c in $cand; do
+        if opt=$(find_option "$c"); then echo "$opt"; return 0; fi
+    done
+    die "this board has no Status option for '$st' (tried: ${cand//|/, }; board options: $(paste -sd, <<< "$STATUS_OPTIONS" | sed 's/,/, /g')); set TRACKER_GITHUB_STATUS_MAP, e.g. \"$st=<Option>\"" 3
+}
+# Board option -> neutral status; unmapped options become other:<lowercase-hyphenated>.
+gh_to_neutral() {
+    local raw="$1" n cand c IFS
+    for n in "${NEUTRAL_STATUSES[@]}"; do
+        cand=$(status_override "$n")
+        [[ -n "$cand" && "${cand,,}" == "${raw,,}" ]] && { echo "$n"; return 0; }
+    done
+    for n in "${NEUTRAL_STATUSES[@]}"; do
+        IFS='|'
+        for c in $(status_candidates "$n"); do
+            [[ "${c,,}" == "${raw,,}" ]] && { echo "$n"; return 0; }
+        done
+    done
+    echo "other:$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
 }
 size_to_gh() {
     case "$1" in
@@ -82,6 +144,12 @@ to_neutral() {
     case "$1" in
         ""|none|"(not in project)"|-) echo "-" ;;
         *) echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' ;;
+    esac
+}
+status_to_neutral() {
+    case "$1" in
+        ""|none|"(not in project)"|-) echo "-" ;;
+        *) gh_to_neutral "$1" ;;
     esac
 }
 
@@ -213,10 +281,11 @@ cmd_fields() {
     declare -A status=() size=()
     if find_project; then
         need_jq
+        load_status_options
         local num st sz
         while IFS=$'\t' read -r num st sz; do
             [[ "$num" =~ ^[0-9]+$ ]] || continue
-            status[$num]=$(to_neutral "$st")
+            status[$num]=$(status_to_neutral "$st")
             size[$num]=$(to_neutral "$sz")
         done < <("$SCRIPTS/get-project-fields.sh" "$PROJECT_ID" "$(joined_refs)")
     else
@@ -235,11 +304,13 @@ cmd_set_status() {
     local st="${*: -1}"
     set -- "${@:1:$#-1}"
     local gh_status
-    gh_status=$(status_to_gh "$st")
+    status_candidates "$st" >/dev/null || usage_err "unknown status: $st"
     parse_refs "$@"
     need_project
     need_jq
     [[ -n "$STATUS_FIELD_ID" ]] || die "the GitHub Project has no 'Status' field; set TRACKER_GITHUB_STATUS_FIELD_ID"
+    load_status_options
+    gh_status=$(status_to_gh "$st")
     "$SCRIPTS/set-status.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$(joined_refs)" "$gh_status"
 }
 
@@ -271,7 +342,7 @@ cmd_create() {
                 shift 2 ;;
             --label) label="${2:-}"; shift 2 ;;
             --milestone) milestone="${2:-}"; shift 2 ;;
-            --status) st=$(status_to_gh "${2:-}"); shift 2 ;;
+            --status) st="${2:-}"; status_candidates "$st" >/dev/null || usage_err "unknown status: $st"; shift 2 ;;
             --size) sz=$(size_to_gh "${2:-}"); shift 2 ;;
             *) usage_err "unknown create option: $1" ;;
         esac
@@ -280,7 +351,11 @@ cmd_create() {
 
     local out
     if find_project; then
-        [[ -z "$st" ]] || need_jq
+        if [[ -n "$st" ]]; then
+            need_jq
+            load_status_options
+            st=$(status_to_gh "$st")
+        fi
         local args=(--title "$title")
         [[ -n "$body" ]] && args+=(--body "$body")
         [[ -n "$label" ]] && args+=(--label "$label")
@@ -325,6 +400,13 @@ cmd_close_milestone() {
         echo "harness-tracker: $PROJECT_ERR; status updates will be skipped" >&2
     fi
 
+    # Resolve the board's "complete" option before changing anything.
+    local done_status=""
+    if [[ "$have_project" == true ]]; then
+        load_status_options
+        done_status=$(status_to_gh complete)
+    fi
+
     # 1. Close open issues (existing script behaviour).
     if [[ "$dry" == true ]]; then
         "$SCRIPTS/close-milestone.sh" "$title" --dry-run
@@ -336,9 +418,9 @@ cmd_close_milestone() {
     all=$(gh issue list --milestone "$title" --state all --limit 1000 --json number --jq '.[].number' | paste -sd,)
     if [[ -n "$all" && "$have_project" == true ]]; then
         if [[ "$dry" == true ]]; then
-            echo "  [dry-run] Would set status Complete on: $all"
+            echo "  [dry-run] Would set status $done_status on: $all"
         else
-            "$SCRIPTS/set-status.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$all" "Complete"
+            "$SCRIPTS/set-status.sh" "$PROJECT_ID" "$STATUS_FIELD_ID" "$all" "$done_status"
         fi
     fi
 
