@@ -10,8 +10,9 @@ When given an issue to work on:
 3. Update status to `In Progress` using `set-status.sh`
 
 # Branching
-- **Multiple issues (epic)**: Create an `epic/*` branch from `dev`, then create `feature/*` branches from the epic branch for each issue. Merge each feature branch back into the epic branch as it's completed.
-- **Single issue**: Create a `feature/*` branch directly from `dev`
+- **Base**: inside a worktree created by `/harness:workstream`, branch from the worktree's current HEAD (a detached HEAD on `integration/<milestone>` or `origin/dev`) — don't check out `dev` first. Otherwise, branch from an up-to-date `dev`.
+- **Multiple issues (epic)**: Create an `epic/*` branch from the base, then create `feature/*` branches from the epic branch for each issue. Merge each feature branch back into the epic branch as it's completed.
+- **Single issue**: Create a `feature/*` branch directly from the base
 - Branch names should reflect the issue (e.g., `feature/42-add-imap-scanning`, `epic/12-auth-overhaul`)
 - Use the **harness:git-flow** skill for branching conventions
 
@@ -28,10 +29,10 @@ When completing work on an issue, add a comment to the GitHub issue summarizing:
 - Any concerns or follow-ups
 
 # Completion
-1. Commit all remaining changes to the feature branch. DO NOT merge to `dev` or `main`.
+1. Commit all remaining changes to the feature branch. DO NOT merge to `dev`, `integration/*` or `main`.
 2. Update issue status to `Staged` using `set-status.sh`. Update the epic status to `Staged` as well, if its completed.
 
 # Constraints
-- <important> Do not merge into `dev` or `main` </important>
+- <important> Do not merge into `dev`, `integration/*` or `main` </important>
 - Do not open PRs
 - Do not close issues — that happens at merge time

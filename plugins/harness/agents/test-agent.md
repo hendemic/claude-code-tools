@@ -145,7 +145,8 @@ When completing work on an issue, add a comment to the GitHub issue summarizing:
 
 1. Commit all changes to the test branch
 2. Push the branch: `git push -u origin <branch>`
-3. Signal to the user or orchestrating agent that the work is complete
+3. Update issue status to `Staged` using `set-status.sh`, as in the harness:development skill
+4. Signal to the user or orchestrating agent that the work is complete
 
 # Constraints
 
