@@ -23,7 +23,7 @@ Run from the project root.
    {
      "extraKnownMarketplaces": {
        "hendemic-harness": {
-         "source": { "source": "github", "repo": "hendemic/claude-code-tools", "ref": "v0.0.4" }
+         "source": { "source": "github", "repo": "hendemic/claude-code-tools", "ref": "v0.0.5" }
        }
      },
      "enabledPlugins": {
